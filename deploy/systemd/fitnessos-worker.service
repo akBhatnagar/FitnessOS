@@ -1,0 +1,30 @@
+[Unit]
+Description=FitnessOS Celery Worker
+After=network.target redis.service postgresql.service
+Requires=redis.service postgresql.service
+
+[Service]
+Type=exec
+User=fitnessos
+Group=fitnessos
+WorkingDirectory=/opt/fitnessos/backend
+EnvironmentFile=/opt/fitnessos/backend/.env
+
+ExecStart=/opt/fitnessos/backend/.venv/bin/celery \
+    -A app.workers.celery_app worker \
+    --loglevel=info \
+    --concurrency=2 \
+    --queues=default,reviews,embeddings \
+    -n worker@%%h
+
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=fitnessos-worker
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,128 @@
+version: "3.9"
+
+services:
+  # ---- PostgreSQL with pgvector ----
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: fitnessos-postgres
+    environment:
+      POSTGRES_DB: fitnessos
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fitnessos_dev}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d fitnessos"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ---- Redis ----
+  redis:
+    image: redis:7-alpine
+    container_name: fitnessos-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ---- FastAPI Backend ----
+  backend:
+    build:
+      context: ./backend
+      dockerfile: ../docker/Dockerfile.backend
+    container_name: fitnessos-backend
+    env_file: ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-fitnessos_dev}@postgres:5432/fitnessos
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app  # hot reload in dev
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # ---- Celery Worker ----
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: ../docker/Dockerfile.backend
+    container_name: fitnessos-celery-worker
+    env_file: ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-fitnessos_dev}@postgres:5432/fitnessos
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+    depends_on:
+      - backend
+      - redis
+    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=2
+    volumes:
+      - ./backend:/app
+    restart: unless-stopped
+
+  # ---- Celery Beat (scheduler) ----
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: ../docker/Dockerfile.backend
+    container_name: fitnessos-celery-beat
+    env_file: ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-fitnessos_dev}@postgres:5432/fitnessos
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+    depends_on:
+      - redis
+    command: celery -A app.workers.celery_app beat --loglevel=info
+    volumes:
+      - ./backend:/app
+    restart: unless-stopped
+
+  # ---- Next.js Frontend ----
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ../docker/Dockerfile.frontend
+    container_name: fitnessos-frontend
+    environment:
+      NEXT_PUBLIC_API_URL: http://backend:8000
+    env_file: ./frontend/.env.local
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  default:
+    name: fitnessos-network

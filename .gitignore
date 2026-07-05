@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+.venv
+venv/
+dist/
+build/
+*.egg-info/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+.next/
+out/
+.env.local
+.env.production.local
+
+# Docker volumes
+postgres_data/
+redis_data/
+
+# IDE
+.DS_Store
+.vscode/
+*.swp
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# Alembic
+alembic/versions/*.pyc
+
+# Secrets and local env — never commit
+.env
+.env.*
+!.env.example
+!**/.env.example
+!**/.env.local.example
+!**/.env.production.example
+backend/.env
+backend/.env.production
+frontend/.env.local
+frontend/.env.production
+frontend/.env.production.local
+**/fitnessos_db_creds.txt
+**/fitnessos_backend.env
+
+# Logs
+*.log
+logs/

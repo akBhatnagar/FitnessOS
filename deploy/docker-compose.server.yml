@@ -1,0 +1,42 @@
+version: "3.9"
+
+# FitnessOS — PostgreSQL + Redis only
+# Backend and Frontend run directly via systemd (not Docker)
+# This keeps RAM usage minimal on a 1GB droplet
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: fitnessos-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: fitnessos
+      POSTGRES_USER: fitnessos
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - fitnessos_pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5435:5432"   # Port 5435 to avoid conflict with other apps
+    command: >
+      postgres
+        -c shared_buffers=64MB
+        -c effective_cache_size=256MB
+        -c max_connections=50
+        -c work_mem=4MB
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fitnessos -d fitnessos"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: fitnessos-redis
+    restart: unless-stopped
+    command: redis-server --bind 127.0.0.1 --maxmemory 32mb --maxmemory-policy allkeys-lru
+    ports:
+      - "127.0.0.1:6380:6379"   # Port 6380 to avoid conflict with existing redis
+
+volumes:
+  fitnessos_pgdata:
+    driver: local
