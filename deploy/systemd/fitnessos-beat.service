@@ -1,0 +1,28 @@
+[Unit]
+Description=FitnessOS Celery Beat Scheduler
+After=network.target redis.service
+Requires=redis.service
+
+[Service]
+Type=exec
+User=fitnessos
+Group=fitnessos
+WorkingDirectory=/opt/fitnessos/backend
+EnvironmentFile=/opt/fitnessos/backend/.env
+
+ExecStart=/opt/fitnessos/backend/.venv/bin/celery \
+    -A app.workers.celery_app beat \
+    --loglevel=info \
+    --scheduler celery.beat.PersistentScheduler
+
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=fitnessos-beat
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

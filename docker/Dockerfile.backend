@@ -1,0 +1,40 @@
+FROM python:3.11-slim AS base
+
+WORKDIR /app
+
+# System dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    libpq-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Poetry
+RUN pip install poetry==1.8.0
+ENV POETRY_VIRTUALENVS_CREATE=false \
+    POETRY_NO_INTERACTION=1
+
+# Copy dependency files
+COPY pyproject.toml poetry.lock* ./
+
+# ---- Dependencies stage ----
+FROM base AS deps
+RUN poetry install --only=main --no-root
+
+# ---- Production stage ----
+FROM deps AS production
+
+COPY . .
+RUN poetry install --only-root
+
+# Non-root user for security
+RUN addgroup --system --gid 1001 fitnessos && \
+    adduser --system --uid 1001 --gid 1001 fitnessos
+USER fitnessos
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+  CMD curl -f http://localhost:8000/health || exit 1
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]

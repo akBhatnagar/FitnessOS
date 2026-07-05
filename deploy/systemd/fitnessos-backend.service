@@ -1,0 +1,34 @@
+[Unit]
+Description=FitnessOS FastAPI Backend
+After=network.target postgresql.service redis.service
+Requires=postgresql.service redis.service
+
+[Service]
+Type=exec
+User=fitnessos
+Group=fitnessos
+WorkingDirectory=/opt/fitnessos/backend
+EnvironmentFile=/opt/fitnessos/backend/.env
+
+ExecStart=/opt/fitnessos/backend/.venv/bin/uvicorn app.main:app \
+    --host 127.0.0.1 \
+    --port 8000 \
+    --workers 2 \
+    --loop uvloop \
+    --no-access-log
+
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=fitnessos-backend
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/opt/fitnessos/backend
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target
