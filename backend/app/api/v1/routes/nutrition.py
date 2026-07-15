@@ -183,14 +183,18 @@ async def search_foods(
 
 @router.get("/today")
 async def get_today_summary(
+    date_param: Optional[date] = Query(None, alias="date", description="YYYY-MM-DD, defaults to today"),
     current_user: TokenPayload = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
-    Today's nutrition summary: totals, macro breakdown, all meals, remaining targets.
+    Daily nutrition summary: totals, macro breakdown, meals, remaining targets.
+    Pass ?date=YYYY-MM-DD to view or log for a previous day.
     """
     user = await _get_user(current_user.sub, db)
-    today = date.today()
+    target_date = date_param or date.today()
+    if target_date > date.today():
+        raise HTTPException(status_code=400, detail="Cannot view future dates")
 
     # Get user's targets
     prefs_result = await db.execute(
@@ -208,10 +212,10 @@ async def get_today_summary(
         target_protein = round(w * 1.6)
         target_calories = round(w * 22)  # approximate for moderate deficit
 
-    # Get all meals today
+    # Get all meals for the selected day
     meals_result = await db.execute(
         select(Meal)
-        .where(Meal.user_id == user.id, Meal.meal_date == today)
+        .where(Meal.user_id == user.id, Meal.meal_date == target_date)
         .order_by(Meal.meal_time)
     )
     meals = meals_result.scalars().all()
@@ -239,7 +243,7 @@ async def get_today_summary(
     calorie_pct = min(100, round(total_calories / target_calories * 100))
 
     return {
-        "date": today.isoformat(),
+        "date": target_date.isoformat(),
         "totals": {
             "calories": round(total_calories, 1),
             "protein_g": round(total_protein, 1),
@@ -287,6 +291,9 @@ async def log_meal(
 ) -> dict:
     """Create an empty meal container. Add food items with /meals/:id/items."""
     user = await _get_user(current_user.sub, db)
+
+    if request.meal_date > date.today():
+        raise HTTPException(status_code=400, detail="Cannot log meals for future dates")
 
     meal_time = None
     if request.meal_time:

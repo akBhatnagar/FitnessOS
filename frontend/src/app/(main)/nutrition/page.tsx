@@ -14,6 +14,7 @@ import {
 import { cn } from "@/lib/utils";
 import { apiClient } from "@/services/api";
 import { toast } from "sonner";
+import { DatePickerBar, todayStr } from "@/components/shared/DatePickerBar";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -140,22 +141,49 @@ function FoodSearchPanel({
   onAdded: () => void;
   onClose: () => void;
 }) {
+  const [mode, setMode] = useState<"search" | "manual">("search");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<FoodResult[]>([]);
+  const [searching, setSearching] = useState(false);
   const [selected, setSelected] = useState<FoodResult | null>(null);
   const [quantity, setQuantity] = useState("100");
   const [adding, setAdding] = useState(false);
+  const [manual, setManual] = useState({
+    name: "",
+    quantity_g: "100",
+    calories: "",
+    protein_g: "",
+    carbs_g: "",
+    fat_g: "",
+  });
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { inputRef.current?.focus(); }, []);
+  useEffect(() => { inputRef.current?.focus(); }, [mode]);
 
   const search = async (q: string) => {
     setQuery(q);
-    if (!q.trim()) { setResults([]); return; }
+    if (!q.trim()) {
+      setResults([]);
+      return;
+    }
+    setSearching(true);
     try {
       const res = await apiClient.get(`/api/v1/nutrition/foods?query=${encodeURIComponent(q)}&limit=8`);
       setResults(res.data);
-    } catch {}
+    } catch {
+      setResults([]);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const openManual = (name?: string) => {
+    setMode("manual");
+    setManual((prev) => ({
+      ...prev,
+      name: name ?? query.trim(),
+    }));
+    setSelected(null);
   };
 
   const addFood = async () => {
@@ -180,6 +208,46 @@ function FoodSearchPanel({
     }
   };
 
+  const addManualFood = async () => {
+    const name = manual.name.trim();
+    const qty = parseFloat(manual.quantity_g);
+    const calories = parseFloat(manual.calories);
+    const protein = parseFloat(manual.protein_g);
+    const carbs = parseFloat(manual.carbs_g || "0");
+    const fat = parseFloat(manual.fat_g || "0");
+
+    if (!name || !qty || qty <= 0) {
+      toast.error("Enter a food name and quantity.");
+      return;
+    }
+    if (Number.isNaN(calories) || Number.isNaN(protein)) {
+      toast.error("Calories and protein are required for custom foods.");
+      return;
+    }
+
+    setAdding(true);
+    try {
+      const res = await apiClient.post(`/api/v1/nutrition/meals/${mealId}/items`, {
+        food_name: name,
+        quantity_g: qty,
+        calories_override: calories,
+        protein_override: protein,
+        carbs_override: carbs,
+        fat_override: fat,
+      });
+      toast.success(`Added ${name} — ${res.data.protein_g}g protein`);
+      onAdded();
+      setMode("search");
+      setManual({ name: "", quantity_g: "100", calories: "", protein_g: "", carbs_g: "", fat_g: "" });
+      setQuery("");
+      setResults([]);
+    } catch {
+      toast.error("Failed to add custom food.");
+    } finally {
+      setAdding(false);
+    }
+  };
+
   const qtyNum = parseFloat(quantity) || 100;
   const preview = selected ? {
     calories: Math.round(selected.calories_per_100g * qtyNum / 100),
@@ -191,13 +259,90 @@ function FoodSearchPanel({
   return (
     <div className="rounded-xl border bg-card p-4 space-y-3">
       <div className="flex items-center justify-between">
-        <span className="text-sm font-semibold">Add Food</span>
+        <span className="text-sm font-semibold">
+          {mode === "manual" ? "Add Custom Food" : "Add Food"}
+        </span>
         <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
           <X className="h-4 w-4" />
         </button>
       </div>
 
-      {!selected ? (
+      {mode === "manual" ? (
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs text-muted-foreground">Food name</label>
+            <Input
+              value={manual.name}
+              onChange={(e) => setManual({ ...manual, name: e.target.value })}
+              placeholder="e.g. restaurant biryani, homemade paratha"
+              className="mt-1"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">Quantity (grams)</label>
+            <Input
+              type="number"
+              value={manual.quantity_g}
+              onChange={(e) => setManual({ ...manual, quantity_g: e.target.value })}
+              className="mt-1"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-xs text-muted-foreground">Calories *</label>
+              <Input
+                type="number"
+                value={manual.calories}
+                onChange={(e) => setManual({ ...manual, calories: e.target.value })}
+                placeholder="kcal"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Protein (g) *</label>
+              <Input
+                type="number"
+                value={manual.protein_g}
+                onChange={(e) => setManual({ ...manual, protein_g: e.target.value })}
+                placeholder="g"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Carbs (g)</label>
+              <Input
+                type="number"
+                value={manual.carbs_g}
+                onChange={(e) => setManual({ ...manual, carbs_g: e.target.value })}
+                placeholder="optional"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Fat (g)</label>
+              <Input
+                type="number"
+                value={manual.fat_g}
+                onChange={(e) => setManual({ ...manual, fat_g: e.target.value })}
+                placeholder="optional"
+                className="mt-1"
+              />
+            </div>
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Use the label, MyFitnessPal, or a rough estimate. Calories and protein are required.
+          </p>
+          <div className="flex gap-2">
+            <Button onClick={addManualFood} disabled={adding} className="flex-1">
+              {adding ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Plus className="h-4 w-4 mr-2" />}
+              Add to Meal
+            </Button>
+            <Button variant="outline" onClick={() => setMode("search")}>
+              Back
+            </Button>
+          </div>
+        </div>
+      ) : !selected ? (
         <>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -209,7 +354,12 @@ function FoodSearchPanel({
               className="pl-9"
             />
           </div>
-          {results.length > 0 && (
+          {searching && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Searching...
+            </div>
+          )}
+          {!searching && results.length > 0 && (
             <div className="space-y-1 max-h-60 overflow-y-auto">
               {results.map((f) => (
                 <button
@@ -234,6 +384,23 @@ function FoodSearchPanel({
               ))}
             </div>
           )}
+          {!searching && query.trim().length >= 2 && results.length === 0 && (
+            <div className="rounded-lg border border-dashed px-3 py-3 text-center space-y-2">
+              <p className="text-sm text-muted-foreground">
+                No matches for &ldquo;{query.trim()}&rdquo;
+              </p>
+              <Button variant="outline" size="sm" onClick={() => openManual(query.trim())}>
+                Add &ldquo;{query.trim()}&rdquo; manually
+              </Button>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => openManual()}
+            className="w-full text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+          >
+            Food not in the list? Add custom entry
+          </button>
         </>
       ) : (
         <div className="space-y-3">
@@ -302,13 +469,31 @@ function FoodSearchPanel({
 function MealCard({
   meal,
   onUpdate,
+  autoOpenSearch = false,
+  onSearchClose,
 }: {
   meal: Meal;
   onUpdate: () => void;
+  autoOpenSearch?: boolean;
+  onSearchClose?: () => void;
 }) {
+  const cardRef = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  useEffect(() => {
+    if (autoOpenSearch) {
+      setExpanded(true);
+      setShowSearch(true);
+      cardRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [autoOpenSearch, meal.id]);
+
+  const closeSearch = () => {
+    setShowSearch(false);
+    onSearchClose?.();
+  };
 
   const handleDelete = async () => {
     setDeleting(true);
@@ -326,7 +511,7 @@ function MealCard({
   const mealMeta = MEAL_TYPES.find((m) => m.key === meal.meal_type);
 
   return (
-    <Card>
+    <Card ref={cardRef}>
       <CardContent className="p-4">
         <div className="flex items-center justify-between">
           <button
@@ -365,8 +550,8 @@ function MealCard({
             {showSearch ? (
               <FoodSearchPanel
                 mealId={meal.id}
-                onAdded={() => { onUpdate(); setShowSearch(false); }}
-                onClose={() => setShowSearch(false)}
+                onAdded={() => { onUpdate(); closeSearch(); }}
+                onClose={closeSearch}
               />
             ) : (
               <div className="flex gap-2 pt-1">
@@ -407,15 +592,18 @@ function MealCard({
 // ─── Main Page ──────────────────────────────────────────────────────────────
 
 export default function NutritionPage() {
+  const [selectedDate, setSelectedDate] = useState(todayStr);
   const [data, setData] = useState<DayData | null>(null);
   const [loading, setLoading] = useState(true);
   const [addingMeal, setAddingMeal] = useState<string | null>(null);
   const [creatingMeal, setCreatingMeal] = useState(false);
-  const [showFoodSearch, setShowFoodSearch] = useState<{ mealId: string } | null>(null);
+  const [searchMealId, setSearchMealId] = useState<string | null>(null);
 
-  const loadData = async () => {
+  const isToday = selectedDate === todayStr();
+
+  const loadData = async (date = selectedDate) => {
     try {
-      const res = await apiClient.get("/api/v1/nutrition/today");
+      const res = await apiClient.get("/api/v1/nutrition/today", { params: { date } });
       setData(res.data);
     } catch {
       toast.error("Failed to load nutrition data.");
@@ -424,18 +612,28 @@ export default function NutritionPage() {
     }
   };
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => {
+    setLoading(true);
+    setSearchMealId(null);
+    loadData(selectedDate);
+  }, [selectedDate]);
 
   const createMeal = async (mealType: string) => {
+    const existing = data?.meals.find((m) => m.meal_type === mealType);
+    if (existing) {
+      setSearchMealId(existing.id);
+      return;
+    }
+
     setCreatingMeal(true);
     setAddingMeal(mealType);
     try {
       const res = await apiClient.post("/api/v1/nutrition/meals", {
         meal_type: mealType,
-        meal_date: format(new Date(), "yyyy-MM-dd"),
+        meal_date: selectedDate,
       });
       await loadData();
-      toast.success(`${mealType.replace("_", " ")} meal created — add foods now`);
+      setSearchMealId(res.data.id);
     } catch {
       toast.error("Failed to create meal.");
     } finally {
@@ -461,14 +659,18 @@ export default function NutritionPage() {
     insight: "",
   };
 
-  const loggedMealTypes = new Set(meals.map((m) => m.meal_type));
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold">Nutrition</h1>
-        <p className="text-muted-foreground text-sm">{format(new Date(), "EEEE, MMMM d")}</p>
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <h1 className="text-2xl font-bold">Nutrition</h1>
+          {!isToday && (
+            <Badge variant="secondary" className="text-xs">Past date</Badge>
+          )}
+        </div>
+        <DatePickerBar value={selectedDate} onChange={setSelectedDate} />
       </div>
 
       {/* Macro Rings */}
@@ -513,28 +715,39 @@ export default function NutritionPage() {
       {/* Logged Meals */}
       {meals.length > 0 && (
         <div className="space-y-3">
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Logged Meals</h2>
+          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+            {isToday ? "Today's Meals" : "Meals"}
+          </h2>
           {meals.map((meal) => (
-            <MealCard key={meal.id} meal={meal} onUpdate={loadData} />
+            <MealCard
+              key={meal.id}
+              meal={meal}
+              onUpdate={loadData}
+              autoOpenSearch={searchMealId === meal.id}
+              onSearchClose={() => setSearchMealId(null)}
+            />
           ))}
         </div>
       )}
 
       {/* Add Meal Buttons */}
       <div>
-        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Log a Meal</h2>
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+          {meals.length > 0 ? "Add another meal" : "Log a meal"}
+        </h2>
         <div className="grid grid-cols-3 gap-2">
           {MEAL_TYPES.map((mt) => {
-            const alreadyLogged = loggedMealTypes.has(mt.key);
+            const existingMeal = meals.find((m) => m.meal_type === mt.key);
+            const alreadyLogged = Boolean(existingMeal);
             return (
               <button
                 key={mt.key}
                 onClick={() => createMeal(mt.key)}
                 disabled={creatingMeal && addingMeal === mt.key}
                 className={cn(
-                  "flex items-center gap-2 rounded-xl border px-3 py-3 text-sm font-medium transition-all",
+                  "flex flex-col items-center gap-1 rounded-xl border px-3 py-3 text-sm font-medium transition-all",
                   alreadyLogged
-                    ? "border-green-500/30 bg-green-500/5 text-green-400"
+                    ? "border-green-500/30 bg-green-500/5 text-green-400 hover:border-primary/50"
                     : "border-border hover:border-primary/50 hover:bg-muted/30"
                 )}
               >
@@ -546,6 +759,9 @@ export default function NutritionPage() {
                   <span className="text-base">{mt.emoji}</span>
                 )}
                 <span className="text-xs">{mt.label}</span>
+                {alreadyLogged && (
+                  <span className="text-[10px] text-muted-foreground">+ add food</span>
+                )}
               </button>
             );
           })}
