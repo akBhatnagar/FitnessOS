@@ -16,6 +16,15 @@ import { cn } from "@/lib/utils";
 import { apiClient } from "@/services/api";
 import { toast } from "sonner";
 import { DatePickerBar, todayStr } from "@/components/shared/DatePickerBar";
+import { MuscleWorkoutView } from "@/components/workouts/MuscleWorkoutView";
+import {
+  LOG_MUSCLE_OPTIONS,
+  MIXED_WORKOUT,
+  COMBO_WORKOUT,
+  buildComboLabel,
+  buildComboMuscles,
+  getLogMuscleOption,
+} from "@/lib/workoutMuscles";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -64,7 +73,13 @@ interface Suggestion {
   notes: string[];
 }
 
-type View = "overview" | "active_session" | "exercise_library";
+type View = "overview" | "active_session" | "exercise_library" | "muscle_workout";
+
+interface MuscleWorkoutState {
+  session: Session;
+  dbMuscles: string[];
+  defaultPrimaryMuscle: string;
+}
 
 const QUICK_SESSIONS = [
   { name: "Push Day", muscles: ["chest", "triceps", "front_deltoid"] },
@@ -451,6 +466,10 @@ export default function WorkoutsPage() {
   const [loading, setLoading] = useState(true);
   const [generatingPlan, setGeneratingPlan] = useState(false);
   const [creatingSession, setCreatingSession] = useState(false);
+  const [muscleWorkout, setMuscleWorkout] = useState<MuscleWorkoutState | null>(null);
+  const [comboOpen, setComboOpen] = useState(false);
+  const [comboMuscle1, setComboMuscle1] = useState(LOG_MUSCLE_OPTIONS[0].key);
+  const [comboMuscle2, setComboMuscle2] = useState(LOG_MUSCLE_OPTIONS[1].key);
 
   const isToday = selectedDate === todayStr();
 
@@ -532,6 +551,84 @@ export default function WorkoutsPage() {
     }
   };
 
+  const startMuscleWorkout = async (
+    sessionName: string,
+    dbMuscles: string[],
+    defaultPrimaryMuscle: string,
+  ) => {
+    setCreatingSession(true);
+    try {
+      const res = await apiClient.post("/api/v1/workouts/sessions", {
+        session_name: sessionName,
+        scheduled_date: selectedDate,
+        muscle_groups: dbMuscles,
+      });
+      await apiClient.post(`/api/v1/workouts/sessions/${res.data.id}/start`);
+      setMuscleWorkout({
+        session: {
+          id: res.data.id,
+          session_name: sessionName,
+          scheduled_date: selectedDate,
+          status: "in_progress",
+          muscle_groups: dbMuscles,
+          duration_minutes: null,
+          sets_logged: 0,
+          effort_rating: null,
+        },
+        dbMuscles,
+        defaultPrimaryMuscle,
+      });
+      setView("muscle_workout");
+      setComboOpen(false);
+    } catch {
+      toast.error("Failed to start workout.");
+    } finally {
+      setCreatingSession(false);
+    }
+  };
+
+  const handleSingleMuscle = (key: string) => {
+    const option = getLogMuscleOption(key);
+    if (!option) return;
+    startMuscleWorkout(
+      `${option.label} Workout`,
+      option.dbMuscles,
+      option.dbMuscles[0],
+    );
+  };
+
+  const handleMixedWorkout = () => {
+    startMuscleWorkout(
+      MIXED_WORKOUT.label,
+      MIXED_WORKOUT.dbMuscles,
+      "chest",
+    );
+  };
+
+  const handleComboWorkout = () => {
+    const m1 = getLogMuscleOption(comboMuscle1);
+    const m2 = getLogMuscleOption(comboMuscle2);
+    if (!m1 || !m2) return;
+    if (comboMuscle1 === comboMuscle2) {
+      toast.error("Pick two different muscle groups.");
+      return;
+    }
+    const dbMuscles = buildComboMuscles(m1, m2);
+    startMuscleWorkout(buildComboLabel(m1, m2), dbMuscles, m1.dbMuscles[0]);
+  };
+
+  if (view === "muscle_workout" && muscleWorkout) {
+    return (
+      <MuscleWorkoutView
+        session={muscleWorkout.session}
+        dbMuscles={muscleWorkout.dbMuscles}
+        defaultPrimaryMuscle={muscleWorkout.defaultPrimaryMuscle}
+        onBack={() => { setView("overview"); setMuscleWorkout(null); }}
+        onComplete={() => { setView("overview"); setMuscleWorkout(null); loadData(); }}
+      />
+    );
+  }
+
   if (view === "active_session" && activeSession) {
     return (
       <ActiveSessionView
@@ -610,6 +707,88 @@ export default function WorkoutsPage() {
           </Button>
         </div>
         <DatePickerBar value={selectedDate} onChange={setSelectedDate} />
+      </div>
+
+      {/* Log by muscle group */}
+      <div>
+        <h2 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wider">
+          Log by Muscle
+        </h2>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {LOG_MUSCLE_OPTIONS.map((m) => (
+            <Button
+              key={m.key}
+              variant="outline"
+              size="sm"
+              disabled={creatingSession}
+              className="h-auto py-2.5 flex-col gap-0.5"
+              onClick={() => handleSingleMuscle(m.key)}
+            >
+              <Dumbbell className="h-4 w-4" />
+              <span className="text-xs">{m.label}</span>
+            </Button>
+          ))}
+        </div>
+
+        <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <Button
+            variant="outline"
+            disabled={creatingSession}
+            onClick={() => setComboOpen((v) => !v)}
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            {COMBO_WORKOUT.label}
+          </Button>
+          <Button
+            variant="outline"
+            disabled={creatingSession}
+            onClick={handleMixedWorkout}
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            {MIXED_WORKOUT.label}
+          </Button>
+        </div>
+
+        {comboOpen && (
+          <Card className="mt-2">
+            <CardContent className="p-4 space-y-3">
+              <p className="text-sm font-medium">Pick two muscle groups</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-muted-foreground">Muscle 1</label>
+                  <select
+                    value={comboMuscle1}
+                    onChange={(e) => setComboMuscle1(e.target.value)}
+                    className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                  >
+                    {LOG_MUSCLE_OPTIONS.map((m) => (
+                      <option key={m.key} value={m.key}>{m.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Muscle 2</label>
+                  <select
+                    value={comboMuscle2}
+                    onChange={(e) => setComboMuscle2(e.target.value)}
+                    className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                  >
+                    {LOG_MUSCLE_OPTIONS.map((m) => (
+                      <option key={m.key} value={m.key}>{m.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <Button onClick={handleComboWorkout} disabled={creatingSession} className="w-full">
+                {creatingSession ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                Start {buildComboLabel(
+                  getLogMuscleOption(comboMuscle1)!,
+                  getLogMuscleOption(comboMuscle2)!,
+                )} Workout
+              </Button>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Sessions for selected date */}
