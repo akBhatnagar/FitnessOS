@@ -15,6 +15,7 @@ import {
 import { cn } from "@/lib/utils";
 import { apiClient } from "@/services/api";
 import { toast } from "sonner";
+import { DatePickerBar, todayStr } from "@/components/shared/DatePickerBar";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -64,6 +65,12 @@ interface Suggestion {
 }
 
 type View = "overview" | "active_session" | "exercise_library";
+
+const QUICK_SESSIONS = [
+  { name: "Push Day", muscles: ["chest", "triceps", "front_deltoid"] },
+  { name: "Pull Day", muscles: ["lats", "mid_back", "biceps"] },
+  { name: "Legs Day", muscles: ["quads", "hamstrings", "glutes"] },
+];
 
 const MUSCLE_COLORS: Record<string, string> = {
   chest: "bg-blue-500/20 text-blue-400",
@@ -434,6 +441,7 @@ function ActiveSessionView({
 // ─── Main Page ──────────────────────────────────────────────────────────────
 
 export default function WorkoutsPage() {
+  const [selectedDate, setSelectedDate] = useState(todayStr);
   const [view, setView] = useState<View>("overview");
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeSession, setActiveSession] = useState<Session | null>(null);
@@ -442,16 +450,19 @@ export default function WorkoutsPage() {
   const [exerciseQuery, setExerciseQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [generatingPlan, setGeneratingPlan] = useState(false);
+  const [creatingSession, setCreatingSession] = useState(false);
+
+  const isToday = selectedDate === todayStr();
 
   useEffect(() => {
-    loadData();
-  }, []);
+    loadData(selectedDate);
+  }, [selectedDate]);
 
-  const loadData = async () => {
+  const loadData = async (date = selectedDate) => {
     setLoading(true);
     try {
       const [todayRes, historyRes] = await Promise.all([
-        apiClient.get("/api/v1/workouts/sessions/today"),
+        apiClient.get("/api/v1/workouts/sessions/today", { params: { date } }),
         apiClient.get("/api/v1/workouts/sessions/history?limit=5"),
       ]);
       setSessions(todayRes.data);
@@ -501,6 +512,23 @@ export default function WorkoutsPage() {
       toast.error("Failed to generate plan.");
     } finally {
       setGeneratingPlan(false);
+    }
+  };
+
+  const createSessionForDate = async (sessionName: string, muscleGroups: string[] = []) => {
+    setCreatingSession(true);
+    try {
+      await apiClient.post("/api/v1/workouts/sessions", {
+        session_name: sessionName,
+        scheduled_date: selectedDate,
+        muscle_groups: muscleGroups,
+      });
+      toast.success(`${sessionName} added`);
+      await loadData();
+    } catch {
+      toast.error("Failed to create session.");
+    } finally {
+      setCreatingSession(false);
     }
   };
 
@@ -569,22 +597,25 @@ export default function WorkoutsPage() {
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Workouts</h1>
-          <p className="text-muted-foreground text-sm">{format(new Date(), "EEEE, MMMM d")}</p>
-        </div>
-        <div className="flex gap-2">
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h1 className="text-2xl font-bold">Workouts</h1>
+            {!isToday && (
+              <Badge variant="secondary" className="text-xs">Past date</Badge>
+            )}
+          </div>
           <Button variant="outline" size="sm" onClick={() => setView("exercise_library")}>
             <Search className="h-4 w-4 mr-1" /> Library
           </Button>
         </div>
+        <DatePickerBar value={selectedDate} onChange={setSelectedDate} />
       </div>
 
-      {/* Today's Sessions */}
+      {/* Sessions for selected date */}
       <div>
         <h2 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wider">
-          Today's Sessions
+          {isToday ? "Today's Sessions" : "Sessions"}
         </h2>
 
         {loading ? (
@@ -596,13 +627,35 @@ export default function WorkoutsPage() {
             <CardContent className="flex flex-col items-center justify-center py-10 text-center gap-3">
               <Dumbbell className="h-10 w-10 text-muted-foreground" />
               <div>
-                <p className="font-semibold">No sessions scheduled today</p>
-                <p className="text-muted-foreground text-sm">Generate a plan or it might be a rest day</p>
+                <p className="font-semibold">
+                  {isToday ? "No sessions scheduled today" : "No sessions logged for this date"}
+                </p>
+                <p className="text-muted-foreground text-sm">
+                  {isToday
+                    ? "Generate a plan or it might be a rest day"
+                    : "Add a workout to log sets for this day"}
+                </p>
               </div>
-              <Button onClick={generatePlan} disabled={generatingPlan}>
-                {generatingPlan ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Zap className="h-4 w-4 mr-2" />}
-                Generate Push/Pull/Legs Plan
-              </Button>
+              {isToday ? (
+                <Button onClick={generatePlan} disabled={generatingPlan}>
+                  {generatingPlan ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Zap className="h-4 w-4 mr-2" />}
+                  Generate Push/Pull/Legs Plan
+                </Button>
+              ) : (
+                <div className="flex flex-col gap-2 w-full max-w-xs">
+                  {QUICK_SESSIONS.map((s) => (
+                    <Button
+                      key={s.name}
+                      variant="outline"
+                      disabled={creatingSession}
+                      onClick={() => createSessionForDate(s.name, s.muscles)}
+                    >
+                      {creatingSession ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Plus className="h-4 w-4 mr-2" />}
+                      Log {s.name}
+                    </Button>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         ) : (
@@ -645,6 +698,21 @@ export default function WorkoutsPage() {
                 </CardContent>
               </Card>
             ))}
+            {!isToday && (
+              <div className="flex flex-wrap gap-2 pt-1">
+                {QUICK_SESSIONS.map((s) => (
+                  <Button
+                    key={s.name}
+                    variant="outline"
+                    size="sm"
+                    disabled={creatingSession}
+                    onClick={() => createSessionForDate(s.name, s.muscles)}
+                  >
+                    <Plus className="h-3 w-3 mr-1" /> {s.name}
+                  </Button>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

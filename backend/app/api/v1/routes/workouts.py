@@ -22,7 +22,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -227,17 +227,21 @@ async def get_exercise_detail(
 
 @router.get("/sessions/today")
 async def get_todays_sessions(
+    date_param: Optional[date] = Query(None, alias="date", description="YYYY-MM-DD, defaults to today"),
     current_user: TokenPayload = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[dict]:
-    """Today's scheduled workout sessions with set counts."""
+    """Scheduled workout sessions for a given day (defaults to today)."""
     user = await _get_user(current_user.sub, db)
+    target_date = date_param or date.today()
+    if target_date > date.today():
+        raise HTTPException(status_code=400, detail="Cannot view future dates")
 
     result = await db.execute(
         select(WorkoutSession)
         .where(
             WorkoutSession.user_id == user.id,
-            WorkoutSession.scheduled_date == date.today(),
+            WorkoutSession.scheduled_date == target_date,
         )
         .order_by(WorkoutSession.created_at)
     )
@@ -303,6 +307,9 @@ async def create_session(
 ) -> dict:
     """Manually create a workout session."""
     user = await _get_user(current_user.sub, db)
+
+    if request.scheduled_date > date.today():
+        raise HTTPException(status_code=400, detail="Cannot schedule workouts for future dates")
 
     session = WorkoutSession(
         user_id=user.id,
