@@ -10,12 +10,25 @@ import { Separator } from "@/components/ui/separator";
 import {
   Dumbbell, Play, CheckCircle2, Clock, ChevronRight,
   Search, Plus, Zap, TrendingUp, BarChart3, RotateCcw,
-  Trophy, Target, AlertCircle, Loader2,
+  Trophy, Target, AlertCircle, Loader2, Moon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiClient } from "@/services/api";
 import { toast } from "sonner";
 import { DatePickerBar, todayStr } from "@/components/shared/DatePickerBar";
+import { MuscleWorkoutView } from "@/components/workouts/MuscleWorkoutView";
+import {
+  LOG_MUSCLE_OPTIONS,
+  MIXED_WORKOUT,
+  COMBO_WORKOUT,
+  buildComboLabel,
+  buildComboMuscles,
+  getLogMuscleOption,
+  isMuscleStructuredSession,
+  groupSetsByExercise,
+  REST_DAY_SESSION_NAME,
+  isRestDaySession,
+} from "@/lib/workoutMuscles";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -64,7 +77,13 @@ interface Suggestion {
   notes: string[];
 }
 
-type View = "overview" | "active_session" | "exercise_library";
+type View = "overview" | "active_session" | "exercise_library" | "muscle_workout";
+
+interface MuscleWorkoutState {
+  session: Session;
+  dbMuscles: string[];
+  defaultPrimaryMuscle: string;
+}
 
 const QUICK_SESSIONS = [
   { name: "Push Day", muscles: ["chest", "triceps", "front_deltoid"] },
@@ -280,6 +299,13 @@ function ActiveSessionView({
   const [completing, setCompleting] = useState(false);
   const [elapsed, setElapsed] = useState(0);
 
+  useEffect(() => {
+    apiClient
+      .get(`/api/v1/workouts/sessions/${session.id}/sets`)
+      .then((res) => setLoggedSets(groupSetsByExercise(res.data)))
+      .catch(() => { /* ignore — fresh session */ });
+  }, [session.id]);
+
   // Timer
   useEffect(() => {
     const t = setInterval(() => setElapsed((e) => e + 1), 60000);
@@ -451,6 +477,10 @@ export default function WorkoutsPage() {
   const [loading, setLoading] = useState(true);
   const [generatingPlan, setGeneratingPlan] = useState(false);
   const [creatingSession, setCreatingSession] = useState(false);
+  const [muscleWorkout, setMuscleWorkout] = useState<MuscleWorkoutState | null>(null);
+  const [comboOpen, setComboOpen] = useState(false);
+  const [comboMuscle1, setComboMuscle1] = useState(LOG_MUSCLE_OPTIONS[0].key);
+  const [comboMuscle2, setComboMuscle2] = useState(LOG_MUSCLE_OPTIONS[1].key);
 
   const isToday = selectedDate === todayStr();
 
@@ -488,13 +518,35 @@ export default function WorkoutsPage() {
     }
   }, [view]);
 
-  const startSession = async (session: Session) => {
+  const resumeSession = async (session: Session) => {
+    if (isRestDaySession(session.session_name)) {
+      toast.info("Rest day — no workout to resume.");
+      return;
+    }
     try {
-      await apiClient.post(`/api/v1/workouts/sessions/${session.id}/start`);
-      setActiveSession({ ...session, status: "in_progress" });
+      if (session.status === "scheduled") {
+        await apiClient.post(`/api/v1/workouts/sessions/${session.id}/start`);
+      }
+
+      const inProgress = { ...session, status: "in_progress" as const };
+
+      if (isMuscleStructuredSession(session.session_name)) {
+        const dbMuscles = session.muscle_groups.length > 0
+          ? session.muscle_groups
+          : MIXED_WORKOUT.dbMuscles;
+        setMuscleWorkout({
+          session: inProgress,
+          dbMuscles,
+          defaultPrimaryMuscle: dbMuscles[0] ?? "chest",
+        });
+        setView("muscle_workout");
+        return;
+      }
+
+      setActiveSession(inProgress);
       setView("active_session");
     } catch {
-      toast.error("Failed to start session.");
+      toast.error("Failed to resume session.");
     }
   };
 
@@ -531,6 +583,106 @@ export default function WorkoutsPage() {
       setCreatingSession(false);
     }
   };
+
+  const startMuscleWorkout = async (
+    sessionName: string,
+    dbMuscles: string[],
+    defaultPrimaryMuscle: string,
+  ) => {
+    setCreatingSession(true);
+    try {
+      const res = await apiClient.post("/api/v1/workouts/sessions", {
+        session_name: sessionName,
+        scheduled_date: selectedDate,
+        muscle_groups: dbMuscles,
+      });
+      await apiClient.post(`/api/v1/workouts/sessions/${res.data.id}/start`);
+      setMuscleWorkout({
+        session: {
+          id: res.data.id,
+          session_name: sessionName,
+          scheduled_date: selectedDate,
+          status: "in_progress",
+          muscle_groups: dbMuscles,
+          duration_minutes: null,
+          sets_logged: 0,
+          effort_rating: null,
+        },
+        dbMuscles,
+        defaultPrimaryMuscle,
+      });
+      setView("muscle_workout");
+      setComboOpen(false);
+    } catch {
+      toast.error("Failed to start workout.");
+    } finally {
+      setCreatingSession(false);
+    }
+  };
+
+  const handleSingleMuscle = (key: string) => {
+    const option = getLogMuscleOption(key);
+    if (!option) return;
+    startMuscleWorkout(
+      `${option.label} Workout`,
+      option.dbMuscles,
+      option.dbMuscles[0],
+    );
+  };
+
+  const handleMixedWorkout = () => {
+    startMuscleWorkout(
+      MIXED_WORKOUT.label,
+      MIXED_WORKOUT.dbMuscles,
+      "chest",
+    );
+  };
+
+  const handleComboWorkout = () => {
+    const m1 = getLogMuscleOption(comboMuscle1);
+    const m2 = getLogMuscleOption(comboMuscle2);
+    if (!m1 || !m2) return;
+    if (comboMuscle1 === comboMuscle2) {
+      toast.error("Pick two different muscle groups.");
+      return;
+    }
+    const dbMuscles = buildComboMuscles(m1, m2);
+    startMuscleWorkout(buildComboLabel(m1, m2), dbMuscles, m1.dbMuscles[0]);
+  };
+
+  const logRestDay = async () => {
+    if (sessions.some((s) => isRestDaySession(s.session_name))) {
+      toast.info("Rest day already logged for this date.");
+      return;
+    }
+    setCreatingSession(true);
+    try {
+      const res = await apiClient.post("/api/v1/workouts/sessions", {
+        session_name: REST_DAY_SESSION_NAME,
+        scheduled_date: selectedDate,
+        muscle_groups: [],
+      });
+      await apiClient.post(`/api/v1/workouts/sessions/${res.data.id}/complete`, {});
+      toast.success("Rest day logged");
+      await loadData();
+    } catch {
+      toast.error("Failed to log rest day.");
+    } finally {
+      setCreatingSession(false);
+    }
+  };
+
+  if (view === "muscle_workout" && muscleWorkout) {
+    return (
+      <MuscleWorkoutView
+        session={muscleWorkout.session}
+        dbMuscles={muscleWorkout.dbMuscles}
+        defaultPrimaryMuscle={muscleWorkout.defaultPrimaryMuscle}
+        onBack={() => { setView("overview"); setMuscleWorkout(null); }}
+        onComplete={() => { setView("overview"); setMuscleWorkout(null); loadData(); }}
+      />
+    );
+  }
 
   if (view === "active_session" && activeSession) {
     return (
@@ -612,6 +764,103 @@ export default function WorkoutsPage() {
         <DatePickerBar value={selectedDate} onChange={setSelectedDate} />
       </div>
 
+      {/* Log by muscle group */}
+      <div>
+        <h2 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wider">
+          Log by Muscle
+        </h2>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {LOG_MUSCLE_OPTIONS.map((m) => (
+            <Button
+              key={m.key}
+              variant="outline"
+              size="sm"
+              disabled={creatingSession}
+              className="h-auto py-2.5 flex-col gap-0.5"
+              onClick={() => handleSingleMuscle(m.key)}
+            >
+              <Dumbbell className="h-4 w-4" />
+              <span className="text-xs">{m.label}</span>
+            </Button>
+          ))}
+        </div>
+
+        <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <Button
+            variant="outline"
+            disabled={creatingSession}
+            onClick={() => setComboOpen((v) => !v)}
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            {COMBO_WORKOUT.label}
+          </Button>
+          <Button
+            variant="outline"
+            disabled={creatingSession}
+            onClick={handleMixedWorkout}
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            {MIXED_WORKOUT.label}
+          </Button>
+        </div>
+
+        {comboOpen && (
+          <Card className="mt-2">
+            <CardContent className="p-4 space-y-3">
+              <p className="text-sm font-medium">Pick two muscle groups</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-muted-foreground">Muscle 1</label>
+                  <select
+                    value={comboMuscle1}
+                    onChange={(e) => setComboMuscle1(e.target.value)}
+                    className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                  >
+                    {LOG_MUSCLE_OPTIONS.map((m) => (
+                      <option key={m.key} value={m.key}>{m.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Muscle 2</label>
+                  <select
+                    value={comboMuscle2}
+                    onChange={(e) => setComboMuscle2(e.target.value)}
+                    className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                  >
+                    {LOG_MUSCLE_OPTIONS.map((m) => (
+                      <option key={m.key} value={m.key}>{m.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <Button onClick={handleComboWorkout} disabled={creatingSession} className="w-full">
+                {creatingSession ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                Start {buildComboLabel(
+                  getLogMuscleOption(comboMuscle1)!,
+                  getLogMuscleOption(comboMuscle2)!,
+                )} Workout
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+        <div className="mt-2">
+          <Button
+            variant="outline"
+            disabled={creatingSession || sessions.some((s) => isRestDaySession(s.session_name))}
+            className="w-full"
+            onClick={logRestDay}
+          >
+            {creatingSession ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+            ) : (
+              <Moon className="h-4 w-4 mr-2" />
+            )}
+            Log Rest Day
+          </Button>
+        </div>
+      </div>
+
       {/* Sessions for selected date */}
       <div>
         <h2 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wider">
@@ -637,10 +886,16 @@ export default function WorkoutsPage() {
                 </p>
               </div>
               {isToday ? (
-                <Button onClick={generatePlan} disabled={generatingPlan}>
-                  {generatingPlan ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Zap className="h-4 w-4 mr-2" />}
-                  Generate Push/Pull/Legs Plan
-                </Button>
+                <div className="flex flex-col gap-2 w-full max-w-xs">
+                  <Button onClick={generatePlan} disabled={generatingPlan}>
+                    {generatingPlan ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Zap className="h-4 w-4 mr-2" />}
+                    Generate Push/Pull/Legs Plan
+                  </Button>
+                  <Button variant="outline" onClick={logRestDay} disabled={creatingSession}>
+                    {creatingSession ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Moon className="h-4 w-4 mr-2" />}
+                    Log Rest Day
+                  </Button>
+                </div>
               ) : (
                 <div className="flex flex-col gap-2 w-full max-w-xs">
                   {QUICK_SESSIONS.map((s) => (
@@ -660,35 +915,44 @@ export default function WorkoutsPage() {
           </Card>
         ) : (
           <div className="space-y-3">
-            {sessions.map((s) => (
+            {sessions.map((s) => {
+              const isRest = isRestDaySession(s.session_name);
+              return (
               <Card key={s.id} className={cn(
                 "transition-all",
-                s.status === "completed" && "opacity-60",
+                (s.status === "completed" || isRest) && "opacity-60",
+                isRest && "border-muted",
               )}>
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
+                        {isRest && <Moon className="h-5 w-5 text-muted-foreground" />}
                         <span className="font-bold text-lg">{s.session_name}</span>
                         <Badge variant={
+                          isRest ? "secondary" :
                           s.status === "completed" ? "success" :
                           s.status === "in_progress" ? "default" : "secondary"
                         }>
-                          {s.status.replace("_", " ")}
+                          {isRest ? "rest" : s.status.replace("_", " ")}
                         </Badge>
                       </div>
-                      <div className="flex gap-1 flex-wrap">
-                        {s.muscle_groups.slice(0, 4).map((m) => <MuscleTag key={m} muscle={m} />)}
-                      </div>
-                      {s.sets_logged > 0 && (
-                        <p className="text-xs text-muted-foreground mt-1">{s.sets_logged} sets logged</p>
+                      {!isRest && (
+                        <div className="flex gap-1 flex-wrap">
+                          {s.muscle_groups.slice(0, 4).map((m) => <MuscleTag key={m} muscle={m} />)}
+                        </div>
                       )}
+                      {isRest ? (
+                        <p className="text-xs text-muted-foreground mt-1">Recovery day — no training logged</p>
+                      ) : s.sets_logged > 0 ? (
+                        <p className="text-xs text-muted-foreground mt-1">{s.sets_logged} sets logged</p>
+                      ) : null}
                     </div>
                     <div>
-                      {s.status === "completed" ? (
+                      {s.status === "completed" || isRest ? (
                         <CheckCircle2 className="h-8 w-8 text-green-400" />
                       ) : (
-                        <Button onClick={() => startSession(s)} size="sm">
+                        <Button onClick={() => resumeSession(s)} size="sm">
                           <Play className="h-4 w-4 mr-1" />
                           {s.status === "in_progress" ? "Resume" : "Start"}
                         </Button>
@@ -697,7 +961,7 @@ export default function WorkoutsPage() {
                   </div>
                 </CardContent>
               </Card>
-            ))}
+            );})}
             {!isToday && (
               <div className="flex flex-wrap gap-2 pt-1">
                 {QUICK_SESSIONS.map((s) => (
