@@ -37,3 +37,40 @@ export const COMBO_WORKOUT = {
   key: "combo",
   label: "Two Muscles",
 };
+
+const PPL_SESSION_NAMES = new Set(["Push Day", "Pull Day", "Legs Day"]);
+
+/** Sessions created via Log by Muscle (not PPL plan quick-add). */
+export function isMuscleStructuredSession(sessionName: string): boolean {
+  if (PPL_SESSION_NAMES.has(sessionName)) return false;
+  if (sessionName === MIXED_WORKOUT.label) return true;
+  if (sessionName.endsWith(" Workout")) return true;
+  if (sessionName.includes(" + ")) return true;
+  return false;
+}
+
+export function groupSetsByExercise(
+  rows: Array<{
+    exercise_id: string;
+    exercise_name: string;
+    set_number: number;
+    actual_weight_kg?: number | null;
+    actual_reps?: number | null;
+  }>,
+): Record<string, { exercise_id: string; exercise_name: string; set_number: number; actual_weight_kg?: number; actual_reps?: number }[]> {
+  const grouped: Record<string, { exercise_id: string; exercise_name: string; set_number: number; actual_weight_kg?: number; actual_reps?: number }[]> = {};
+  for (const row of rows) {
+    if (!grouped[row.exercise_id]) grouped[row.exercise_id] = [];
+    grouped[row.exercise_id].push({
+      exercise_id: row.exercise_id,
+      exercise_name: row.exercise_name,
+      set_number: row.set_number,
+      actual_weight_kg: row.actual_weight_kg ?? undefined,
+      actual_reps: row.actual_reps ?? undefined,
+    });
+  }
+  for (const id of Object.keys(grouped)) {
+    grouped[id].sort((a, b) => a.set_number - b.set_number);
+  }
+  return grouped;
+}

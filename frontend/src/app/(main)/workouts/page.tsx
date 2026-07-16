@@ -24,6 +24,8 @@ import {
   buildComboLabel,
   buildComboMuscles,
   getLogMuscleOption,
+  isMuscleStructuredSession,
+  groupSetsByExercise,
 } from "@/lib/workoutMuscles";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -295,6 +297,13 @@ function ActiveSessionView({
   const [completing, setCompleting] = useState(false);
   const [elapsed, setElapsed] = useState(0);
 
+  useEffect(() => {
+    apiClient
+      .get(`/api/v1/workouts/sessions/${session.id}/sets`)
+      .then((res) => setLoggedSets(groupSetsByExercise(res.data)))
+      .catch(() => { /* ignore — fresh session */ });
+  }, [session.id]);
+
   // Timer
   useEffect(() => {
     const t = setInterval(() => setElapsed((e) => e + 1), 60000);
@@ -507,13 +516,31 @@ export default function WorkoutsPage() {
     }
   }, [view]);
 
-  const startSession = async (session: Session) => {
+  const resumeSession = async (session: Session) => {
     try {
-      await apiClient.post(`/api/v1/workouts/sessions/${session.id}/start`);
-      setActiveSession({ ...session, status: "in_progress" });
+      if (session.status === "scheduled") {
+        await apiClient.post(`/api/v1/workouts/sessions/${session.id}/start`);
+      }
+
+      const inProgress = { ...session, status: "in_progress" as const };
+
+      if (isMuscleStructuredSession(session.session_name)) {
+        const dbMuscles = session.muscle_groups.length > 0
+          ? session.muscle_groups
+          : MIXED_WORKOUT.dbMuscles;
+        setMuscleWorkout({
+          session: inProgress,
+          dbMuscles,
+          defaultPrimaryMuscle: dbMuscles[0] ?? "chest",
+        });
+        setView("muscle_workout");
+        return;
+      }
+
+      setActiveSession(inProgress);
       setView("active_session");
     } catch {
-      toast.error("Failed to start session.");
+      toast.error("Failed to resume session.");
     }
   };
 
@@ -867,7 +894,7 @@ export default function WorkoutsPage() {
                       {s.status === "completed" ? (
                         <CheckCircle2 className="h-8 w-8 text-green-400" />
                       ) : (
-                        <Button onClick={() => startSession(s)} size="sm">
+                        <Button onClick={() => resumeSession(s)} size="sm">
                           <Play className="h-4 w-4 mr-1" />
                           {s.status === "in_progress" ? "Resume" : "Start"}
                         </Button>

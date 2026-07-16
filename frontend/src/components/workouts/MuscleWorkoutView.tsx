@@ -159,25 +159,82 @@ export function MuscleWorkoutView({
   const [customMuscle, setCustomMuscle] = useState(defaultPrimaryMuscle);
   const [addingCustom, setAddingCustom] = useState(false);
 
-  const loadExercises = async () => {
-    setLoading(true);
+  const loadSessionSets = async (): Promise<Set<string>> => {
+    const ids = new Set<string>();
     try {
-      const params: Record<string, string> = {};
-      if (dbMuscles.length > 0) {
-        params.muscle_groups = dbMuscles.join(",");
+      const res = await apiClient.get(`/api/v1/workouts/sessions/${session.id}/sets`);
+      const grouped: Record<string, SetRow[]> = {};
+      for (const row of res.data) {
+        ids.add(row.exercise_id);
+        if (!grouped[row.exercise_id]) grouped[row.exercise_id] = [];
+        grouped[row.exercise_id].push({
+          exercise_id: row.exercise_id,
+          exercise_name: row.exercise_name,
+          set_number: row.set_number,
+          actual_weight_kg: row.actual_weight_kg ?? undefined,
+          actual_reps: row.actual_reps ?? undefined,
+        });
       }
-      const res = await apiClient.get("/api/v1/workouts/exercises", { params });
-      setExercises(res.data);
+      for (const id of Object.keys(grouped)) {
+        grouped[id].sort((a, b) => a.set_number - b.set_number);
+      }
+      setLoggedSets(grouped);
+      const firstWithSets = Object.keys(grouped).find((id) => grouped[id].length > 0);
+      if (firstWithSets) setExpandedId(firstWithSets);
     } catch {
-      toast.error("Failed to load exercises.");
-    } finally {
-      setLoading(false);
+      toast.error("Failed to load logged sets.");
     }
+    return ids;
   };
 
   useEffect(() => {
-    loadExercises();
-  }, [dbMuscles.join(",")]);
+    let cancelled = false;
+
+    async function init() {
+      setLoading(true);
+      const loggedExerciseIds = await loadSessionSets();
+      if (cancelled) return;
+
+      try {
+        const params: Record<string, string> = {};
+        if (dbMuscles.length > 0) {
+          params.muscle_groups = dbMuscles.join(",");
+        }
+        const res = await apiClient.get("/api/v1/workouts/exercises", { params });
+        let list: Exercise[] = res.data;
+
+        for (const id of loggedExerciseIds) {
+          if (list.some((e) => e.id === id)) continue;
+          try {
+            const detail = await apiClient.get(`/api/v1/workouts/exercises/${id}`);
+            list = [
+              ...list,
+              {
+                id: detail.data.id,
+                name: detail.data.name,
+                slug: detail.data.slug,
+                primary_muscle: detail.data.primary_muscle,
+                is_compound: detail.data.is_compound,
+                tags: detail.data.tags ?? [],
+                tips: detail.data.tips,
+              },
+            ];
+          } catch {
+            /* exercise may have been removed */
+          }
+        }
+
+        if (!cancelled) setExercises(list);
+      } catch {
+        if (!cancelled) toast.error("Failed to load exercises.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    init();
+    return () => { cancelled = true; };
+  }, [session.id, dbMuscles.join(",")]);
 
   const handleSetLogged = (set: SetRow) => {
     setLoggedSets((prev) => ({
