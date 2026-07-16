@@ -38,10 +38,17 @@ export const COMBO_WORKOUT = {
   label: "Two Muscles",
 };
 
+export const REST_DAY_SESSION_NAME = "Rest Day";
+
+export function isRestDaySession(sessionName: string): boolean {
+  return sessionName === REST_DAY_SESSION_NAME;
+}
+
 const PPL_SESSION_NAMES = new Set(["Push Day", "Pull Day", "Legs Day"]);
 
 /** Sessions created via Log by Muscle (not PPL plan quick-add). */
 export function isMuscleStructuredSession(sessionName: string): boolean {
+  if (isRestDaySession(sessionName)) return false;
   if (PPL_SESSION_NAMES.has(sessionName)) return false;
   if (sessionName === MIXED_WORKOUT.label) return true;
   if (sessionName.endsWith(" Workout")) return true;

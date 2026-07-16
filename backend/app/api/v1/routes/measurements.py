@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import TokenPayload, get_current_user
 from app.db.models.measurement import Measurement
-from app.db.models.user import User
+from app.db.models.user import User, UserPreferences
 from app.db.session import get_db
 
 router = APIRouter(prefix="/measurements", tags=["Measurements"])
@@ -60,12 +60,38 @@ async def log_measurement(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    measurement = Measurement(
-        user_id=user.id,
-        **request.model_dump(exclude_none=True),
+    if request.measured_on > date.today():
+        raise HTTPException(status_code=400, detail="Cannot log measurements for future dates")
+
+    existing_result = await db.execute(
+        select(Measurement).where(
+            Measurement.user_id == user.id,
+            Measurement.measured_on == request.measured_on,
+        )
     )
-    db.add(measurement)
+    measurement = existing_result.scalar_one_or_none()
+
+    if measurement:
+        for field, value in request.model_dump(exclude_none=True).items():
+            if field != "measured_on":
+                setattr(measurement, field, value)
+    else:
+        measurement = Measurement(
+            user_id=user.id,
+            **request.model_dump(exclude_none=True),
+        )
+        db.add(measurement)
+
+    if request.weight_kg and request.measured_on == date.today():
+        prefs_result = await db.execute(
+            select(UserPreferences).where(UserPreferences.user_id == user.id)
+        )
+        prefs = prefs_result.scalar_one_or_none()
+        if prefs:
+            prefs.current_weight_kg = Decimal(str(request.weight_kg))
+
     await db.flush()
+    await db.commit()
 
     return {"status": "logged", "id": str(measurement.id)}
 

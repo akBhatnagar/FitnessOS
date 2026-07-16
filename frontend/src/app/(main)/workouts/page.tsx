@@ -10,7 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import {
   Dumbbell, Play, CheckCircle2, Clock, ChevronRight,
   Search, Plus, Zap, TrendingUp, BarChart3, RotateCcw,
-  Trophy, Target, AlertCircle, Loader2,
+  Trophy, Target, AlertCircle, Loader2, Moon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiClient } from "@/services/api";
@@ -26,6 +26,8 @@ import {
   getLogMuscleOption,
   isMuscleStructuredSession,
   groupSetsByExercise,
+  REST_DAY_SESSION_NAME,
+  isRestDaySession,
 } from "@/lib/workoutMuscles";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -517,6 +519,10 @@ export default function WorkoutsPage() {
   }, [view]);
 
   const resumeSession = async (session: Session) => {
+    if (isRestDaySession(session.session_name)) {
+      toast.info("Rest day — no workout to resume.");
+      return;
+    }
     try {
       if (session.status === "scheduled") {
         await apiClient.post(`/api/v1/workouts/sessions/${session.id}/start`);
@@ -642,6 +648,28 @@ export default function WorkoutsPage() {
     }
     const dbMuscles = buildComboMuscles(m1, m2);
     startMuscleWorkout(buildComboLabel(m1, m2), dbMuscles, m1.dbMuscles[0]);
+  };
+
+  const logRestDay = async () => {
+    if (sessions.some((s) => isRestDaySession(s.session_name))) {
+      toast.info("Rest day already logged for this date.");
+      return;
+    }
+    setCreatingSession(true);
+    try {
+      const res = await apiClient.post("/api/v1/workouts/sessions", {
+        session_name: REST_DAY_SESSION_NAME,
+        scheduled_date: selectedDate,
+        muscle_groups: [],
+      });
+      await apiClient.post(`/api/v1/workouts/sessions/${res.data.id}/complete`, {});
+      toast.success("Rest day logged");
+      await loadData();
+    } catch {
+      toast.error("Failed to log rest day.");
+    } finally {
+      setCreatingSession(false);
+    }
   };
 
   if (view === "muscle_workout" && muscleWorkout) {
@@ -816,6 +844,21 @@ export default function WorkoutsPage() {
             </CardContent>
           </Card>
         )}
+        <div className="mt-2">
+          <Button
+            variant="outline"
+            disabled={creatingSession || sessions.some((s) => isRestDaySession(s.session_name))}
+            className="w-full"
+            onClick={logRestDay}
+          >
+            {creatingSession ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+            ) : (
+              <Moon className="h-4 w-4 mr-2" />
+            )}
+            Log Rest Day
+          </Button>
+        </div>
       </div>
 
       {/* Sessions for selected date */}
@@ -843,10 +886,16 @@ export default function WorkoutsPage() {
                 </p>
               </div>
               {isToday ? (
-                <Button onClick={generatePlan} disabled={generatingPlan}>
-                  {generatingPlan ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Zap className="h-4 w-4 mr-2" />}
-                  Generate Push/Pull/Legs Plan
-                </Button>
+                <div className="flex flex-col gap-2 w-full max-w-xs">
+                  <Button onClick={generatePlan} disabled={generatingPlan}>
+                    {generatingPlan ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Zap className="h-4 w-4 mr-2" />}
+                    Generate Push/Pull/Legs Plan
+                  </Button>
+                  <Button variant="outline" onClick={logRestDay} disabled={creatingSession}>
+                    {creatingSession ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Moon className="h-4 w-4 mr-2" />}
+                    Log Rest Day
+                  </Button>
+                </div>
               ) : (
                 <div className="flex flex-col gap-2 w-full max-w-xs">
                   {QUICK_SESSIONS.map((s) => (
@@ -866,32 +915,41 @@ export default function WorkoutsPage() {
           </Card>
         ) : (
           <div className="space-y-3">
-            {sessions.map((s) => (
+            {sessions.map((s) => {
+              const isRest = isRestDaySession(s.session_name);
+              return (
               <Card key={s.id} className={cn(
                 "transition-all",
-                s.status === "completed" && "opacity-60",
+                (s.status === "completed" || isRest) && "opacity-60",
+                isRest && "border-muted",
               )}>
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
+                        {isRest && <Moon className="h-5 w-5 text-muted-foreground" />}
                         <span className="font-bold text-lg">{s.session_name}</span>
                         <Badge variant={
+                          isRest ? "secondary" :
                           s.status === "completed" ? "success" :
                           s.status === "in_progress" ? "default" : "secondary"
                         }>
-                          {s.status.replace("_", " ")}
+                          {isRest ? "rest" : s.status.replace("_", " ")}
                         </Badge>
                       </div>
-                      <div className="flex gap-1 flex-wrap">
-                        {s.muscle_groups.slice(0, 4).map((m) => <MuscleTag key={m} muscle={m} />)}
-                      </div>
-                      {s.sets_logged > 0 && (
-                        <p className="text-xs text-muted-foreground mt-1">{s.sets_logged} sets logged</p>
+                      {!isRest && (
+                        <div className="flex gap-1 flex-wrap">
+                          {s.muscle_groups.slice(0, 4).map((m) => <MuscleTag key={m} muscle={m} />)}
+                        </div>
                       )}
+                      {isRest ? (
+                        <p className="text-xs text-muted-foreground mt-1">Recovery day — no training logged</p>
+                      ) : s.sets_logged > 0 ? (
+                        <p className="text-xs text-muted-foreground mt-1">{s.sets_logged} sets logged</p>
+                      ) : null}
                     </div>
                     <div>
-                      {s.status === "completed" ? (
+                      {s.status === "completed" || isRest ? (
                         <CheckCircle2 className="h-8 w-8 text-green-400" />
                       ) : (
                         <Button onClick={() => resumeSession(s)} size="sm">
@@ -903,7 +961,7 @@ export default function WorkoutsPage() {
                   </div>
                 </CardContent>
               </Card>
-            ))}
+            );})}
             {!isToday && (
               <div className="flex flex-wrap gap-2 pt-1">
                 {QUICK_SESSIONS.map((s) => (

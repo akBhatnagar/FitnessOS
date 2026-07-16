@@ -11,6 +11,8 @@ import {
 } from "lucide-react";
 import { apiClient } from "@/services/api";
 import { toast } from "sonner";
+import { DatePickerBar, todayStr } from "@/components/shared/DatePickerBar";
+import { Input } from "@/components/ui/input";
 
 interface Measurement {
   id: string;
@@ -34,31 +36,59 @@ interface AnalyticsOverview {
 }
 
 export default function ProfilePage() {
+  const [selectedDate, setSelectedDate] = useState(todayStr);
+  const [weightInput, setWeightInput] = useState("");
+  const [loggingWeight, setLoggingWeight] = useState(false);
   const [measurements, setMeasurements] = useState<Measurement[]>([]);
   const [analytics, setAnalytics] = useState<AnalyticsOverview | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const loadData = async () => {
+    try {
+      const [historyRes, analyticsRes] = await Promise.all([
+        apiClient.get("/api/v1/measurements/", { params: { limit: 30 } }),
+        apiClient.get("/api/v1/analytics/overview"),
+      ]);
+      setMeasurements(historyRes.data ?? []);
+      setAnalytics(analyticsRes.data);
+    } catch {
+      toast.error("Failed to load profile data.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const load = async () => {
-      try {
-        const [measRes, analyticsRes] = await Promise.all([
-          apiClient.get("/api/v1/measurements/latest"),
-          apiClient.get("/api/v1/analytics/overview"),
-        ]);
-        setMeasurements(measRes.data ? [measRes.data] : []);
-        setAnalytics(analyticsRes.data);
-      } catch {
-        toast.error("Failed to load profile data.");
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
+    loadData();
   }, []);
+
+  const logWeight = async () => {
+    const weight = parseFloat(weightInput);
+    if (!weight || weight <= 0) {
+      toast.error("Enter a valid weight in kg.");
+      return;
+    }
+    setLoggingWeight(true);
+    try {
+      await apiClient.post("/api/v1/measurements/", {
+        measured_on: selectedDate,
+        weight_kg: weight,
+      });
+      toast.success(`Weight logged for ${selectedDate}`);
+      setWeightInput("");
+      await loadData();
+    } catch {
+      toast.error("Failed to log weight.");
+    } finally {
+      setLoggingWeight(false);
+    }
+  };
 
   const latest = measurements[0];
   const weightHistory = analytics?.weight_history ?? [];
   const summary = analytics?.weight_summary;
+  const targetKg = summary?.target_kg ?? 85;
+  const isToday = selectedDate === todayStr();
 
   if (loading) {
     return (
@@ -97,19 +127,54 @@ export default function ProfilePage() {
         </CardContent>
       </Card>
 
+      {/* Log weight */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Scale className="h-4 w-4" /> Log Weight
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <DatePickerBar value={selectedDate} onChange={setSelectedDate} />
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <label className="text-xs text-muted-foreground">Weight (kg)</label>
+              <Input
+                type="number"
+                step="0.1"
+                value={weightInput}
+                onChange={(e) => setWeightInput(e.target.value)}
+                placeholder={latest?.weight_kg ? `Last: ${latest.weight_kg} kg` : "e.g. 98.5"}
+                className="mt-1 font-mono text-lg font-bold"
+              />
+            </div>
+            <div className="flex items-end">
+              <Button onClick={logWeight} disabled={loggingWeight} className="h-10">
+                {loggingWeight ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
+              </Button>
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {isToday
+              ? "Log today's weight — updates your current weight on the dashboard."
+              : "Log weight for a past date. Re-saving the same date updates that entry."}
+          </p>
+        </CardContent>
+      </Card>
+
       {/* Current stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard
           icon={<Scale className="h-4 w-4 text-orange-400" />}
           label="Current Weight"
           value={latest?.weight_kg ? `${latest.weight_kg} kg` : "—"}
-          sub="Target: 85 kg"
+          sub={`Target: ${targetKg} kg`}
         />
         <StatCard
           icon={<Target className="h-4 w-4 text-green-400" />}
           label="To Lose"
-          value={latest?.weight_kg ? `${(latest.weight_kg - 85).toFixed(1)} kg` : "—"}
-          sub="Goal weight: 85 kg"
+          value={latest?.weight_kg ? `${Math.max(0, latest.weight_kg - targetKg).toFixed(1)} kg` : "—"}
+          sub={`Goal weight: ${targetKg} kg`}
         />
         <StatCard
           icon={<Ruler className="h-4 w-4 text-blue-400" />}
