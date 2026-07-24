@@ -265,14 +265,16 @@ Catalog (choose ONLY from these):
 {json.dumps(catalog)}
 
 Requirements:
-1. Pick {target_exercises} main exercises that cover the target muscles well
-   (compounds first, then isolations). Every main exercise's primary_muscle
-   OR secondary_muscles MUST overlap the target muscles.
+1. Pick {target_exercises} main exercises that cover ALL of the target muscles
+   (compounds first, then isolations). If multiple muscles were requested
+   (e.g. back + biceps, or chest + shoulders + triceps), include work for
+   each — do not ignore any requested muscle. Every main exercise's
+   primary_muscle OR secondary_muscles MUST overlap the target muscles.
 2. For EACH main exercise, also pick {alternatives_per_exercise} alternative
    exercise ids from the catalog that train a similar movement / same muscle
    (good swaps if equipment is busy or the user wants variety). Alternatives
    must not duplicate the main list.
-3. Balance the session — e.g. for back+biceps include back compounds AND biceps work;
+3. Balance the session across the requested muscles only —
    do NOT include chest/legs/etc. unless those muscles were requested.
 
 Return JSON exactly in this shape:

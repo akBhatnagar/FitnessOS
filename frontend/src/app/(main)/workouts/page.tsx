@@ -540,6 +540,7 @@ export default function WorkoutsPage() {
   const [comboMuscle2, setComboMuscle2] = useState(LOG_MUSCLE_OPTIONS[1].key);
   const [generateOpen, setGenerateOpen] = useState(false);
   const [generateStep, setGenerateStep] = useState<"pick" | "muscle" | "ppl">("pick");
+  const [generateMuscleKeys, setGenerateMuscleKeys] = useState<string[]>([]);
   const [planEditor, setPlanEditor] = useState<PlanEditorConfig | null>(null);
   const [workoutExecution, setWorkoutExecution] = useState<WorkoutExecutionState | null>(null);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
@@ -557,6 +558,7 @@ export default function WorkoutsPage() {
   const closeGenerate = () => {
     setGenerateOpen(false);
     setGenerateStep("pick");
+    setGenerateMuscleKeys([]);
   };
 
   useEffect(() => {
@@ -740,9 +742,32 @@ export default function WorkoutsPage() {
   };
 
   const handleGenerateMusclePick = (key: string) => {
-    const option = getLogMuscleOption(key);
-    if (!option) return;
-    openPlanPreview(`${option.label} Workout`, option.dbMuscles, "muscle");
+    setGenerateMuscleKeys((prev) => {
+      if (prev.includes(key)) return prev.filter((k) => k !== key);
+      if (prev.length >= 3) {
+        toast.error("Pick up to 3 muscle groups.");
+        return prev;
+      }
+      return [...prev, key];
+    });
+  };
+
+  const handleGenerateSelectedMuscles = () => {
+    if (generateMuscleKeys.length === 0) {
+      toast.error("Pick at least one muscle group.");
+      return;
+    }
+    const options = generateMuscleKeys
+      .map((k) => getLogMuscleOption(k))
+      .filter(Boolean) as NonNullable<ReturnType<typeof getLogMuscleOption>>[];
+    if (options.length === 0) return;
+
+    const labels = options.map((o) => o.label);
+    const sessionName = labels.length === 1
+      ? `${labels[0]} Workout`
+      : labels.join(" + ");
+    const dbMuscles = [...new Set(options.flatMap((o) => o.dbMuscles))];
+    openPlanPreview(sessionName, dbMuscles, "muscle");
   };
 
   const handleGenerateMixed = () => {
@@ -1045,13 +1070,16 @@ export default function WorkoutsPage() {
                     <Button
                       variant="outline"
                       className="justify-start h-auto py-3"
-                      onClick={() => setGenerateStep("muscle")}
+                      onClick={() => {
+                        setGenerateMuscleKeys([]);
+                        setGenerateStep("muscle");
+                      }}
                     >
                       <Dumbbell className="h-4 w-4 mr-2 shrink-0" />
                       <div className="text-left">
-                        <div className="font-semibold">Specific Muscle</div>
+                        <div className="font-semibold">Muscle groups</div>
                         <div className="text-xs text-muted-foreground font-normal">
-                          Back, chest, biceps, legs, etc.
+                          Pick 1–3 groups — e.g. back, back + biceps, chest + shoulders + triceps
                         </div>
                       </div>
                     </Button>
@@ -1075,23 +1103,47 @@ export default function WorkoutsPage() {
               {generateStep === "muscle" && (
                 <>
                   <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium">Choose a muscle group</p>
+                    <p className="text-sm font-medium">
+                      Choose 1–3 muscle groups
+                      {generateMuscleKeys.length > 0 && (
+                        <span className="text-muted-foreground font-normal">
+                          {" "}({generateMuscleKeys.length} selected)
+                        </span>
+                      )}
+                    </p>
                     <Button variant="ghost" size="sm" onClick={() => setGenerateStep("pick")}>Back</Button>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {LOG_MUSCLE_OPTIONS.map((m) => (
-                      <Button
-                        key={m.key}
-                        variant="outline"
-                        size="sm"
-                        className="h-auto py-2.5 flex-col gap-0.5"
-                        onClick={() => handleGenerateMusclePick(m.key)}
-                      >
-                        <Dumbbell className="h-4 w-4" />
-                        <span className="text-xs">{m.label}</span>
-                      </Button>
-                    ))}
+                    {LOG_MUSCLE_OPTIONS.map((m) => {
+                      const selected = generateMuscleKeys.includes(m.key);
+                      return (
+                        <Button
+                          key={m.key}
+                          variant={selected ? "default" : "outline"}
+                          size="sm"
+                          className="h-auto py-2.5 flex-col gap-0.5"
+                          onClick={() => handleGenerateMusclePick(m.key)}
+                        >
+                          <Dumbbell className="h-4 w-4" />
+                          <span className="text-xs">{m.label}</span>
+                        </Button>
+                      );
+                    })}
                   </div>
+                  <Button
+                    className="w-full"
+                    disabled={generateMuscleKeys.length === 0}
+                    onClick={handleGenerateSelectedMuscles}
+                  >
+                    <Zap className="h-4 w-4 mr-2" />
+                    Generate{" "}
+                    {generateMuscleKeys.length === 0
+                      ? "workout"
+                      : generateMuscleKeys
+                          .map((k) => getLogMuscleOption(k)?.label)
+                          .filter(Boolean)
+                          .join(" + ")}
+                  </Button>
                 </>
               )}
 

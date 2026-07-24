@@ -221,13 +221,22 @@ async def _build_session_plan_entries(
 
     entries: list[dict] | None = None
     if gen_type in ("muscle", "mixed"):
+        n_muscles = len(muscle_groups or [])
+        if gen_type == "mixed":
+            target = 6
+        elif n_muscles >= 6:
+            target = 7
+        elif n_muscles >= 3:
+            target = 6
+        else:
+            target = 5
         entries = await generate_ai_muscle_plan(
             session_name=session_name,
             muscle_groups=muscle_groups or [],
             ctx=ctx,
             all_exercises=all_exercises,
             exclude_exercise_ids=exclude,
-            target_exercises=5 if gen_type == "muscle" else 6,
+            target_exercises=target,
         )
 
     if not entries:
