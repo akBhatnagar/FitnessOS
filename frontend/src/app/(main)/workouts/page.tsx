@@ -23,6 +23,7 @@ import {
   LOG_MUSCLE_OPTIONS,
   MIXED_WORKOUT,
   COMBO_WORKOUT,
+  ALL_DB_MUSCLES,
   buildComboLabel,
   buildComboMuscles,
   getLogMuscleOption,
@@ -96,8 +97,6 @@ const QUICK_SESSIONS = [
   { name: "Pull Day", muscles: ["lats", "mid_back", "biceps"] },
   { name: "Legs Day", muscles: ["quads", "hamstrings", "glutes"] },
 ];
-
-const ALL_DB_MUSCLES = [...new Set(LOG_MUSCLE_OPTIONS.flatMap((m) => m.dbMuscles))];
 
 const MUSCLE_COLORS: Record<string, string> = {
   chest: "bg-blue-500/20 text-blue-400",

@@ -34,6 +34,9 @@ export const MIXED_WORKOUT = {
   dbMuscles: LOG_MUSCLE_OPTIONS.flatMap((m) => m.dbMuscles),
 };
 
+/** Flat list of all DB primary_muscle values used across log/generate UIs. */
+export const ALL_DB_MUSCLES = [...new Set(LOG_MUSCLE_OPTIONS.flatMap((m) => m.dbMuscles))];
+
 export const COMBO_WORKOUT = {
   key: "combo",
   label: "Two Muscles",
