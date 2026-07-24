@@ -91,14 +91,6 @@ def _apply_load_meta(entry: dict, exercise: Exercise) -> dict:
     if meta["weight_irrelevant"]:
         for s in entry.get("sets", []):
             s["weight_kg"] = 0.0
-        note = entry.get("notes") or ""
-        bw_note = "Bodyweight movement — log reps only."
-        entry["notes"] = f"{bw_note} {note}".strip() if note and bw_note not in note else (note or bw_note)
-    elif meta["load_display"] == "per_hand":
-        note = entry.get("notes") or ""
-        db_note = "Enter the weight of EACH dumbbell (not combined)."
-        if "EACH" not in note:
-            entry["notes"] = f"{db_note} {note}".strip()
     return entry
 
 
@@ -161,18 +153,16 @@ def _candidate_pool(
     all_exercises: list[Exercise],
     muscle_groups: list[str],
 ) -> list[Exercise]:
+    """Only exercises whose *primary* muscle is in the requested groups.
+
+    Secondary-only matches (e.g. bench press for triceps) leak wrong movements
+    into arm/back sessions — never include them in the AI catalog.
+    """
     muscles = set(muscle_groups or [])
     gym = [ex for ex in all_exercises if _exercise_modality(ex) == "strength"]
     if not muscles:
         return gym
-
-    primary = [ex for ex in gym if ex.primary_muscle in muscles]
-    secondary = [
-        ex for ex in gym
-        if ex not in primary
-        and any(sm in muscles for sm in (ex.secondary_muscles or []))
-    ]
-    return primary + secondary[:40]
+    return [ex for ex in gym if ex.primary_muscle in muscles]
 
 
 def _parse_json(content: str) -> dict:
@@ -267,15 +257,14 @@ Catalog (choose ONLY from these):
 Requirements:
 1. Pick {target_exercises} main exercises that cover ALL of the target muscles
    (compounds first, then isolations). If multiple muscles were requested
-   (e.g. back + biceps, or chest + shoulders + triceps), include work for
-   each — do not ignore any requested muscle. Every main exercise's
-   primary_muscle OR secondary_muscles MUST overlap the target muscles.
-2. For EACH main exercise, also pick {alternatives_per_exercise} alternative
-   exercise ids from the catalog that train a similar movement / same muscle
-   (good swaps if equipment is busy or the user wants variety). Alternatives
-   must not duplicate the main list.
-3. Balance the session across the requested muscles only —
-   do NOT include chest/legs/etc. unless those muscles were requested.
+   (e.g. back + biceps, or biceps + triceps), include work for each —
+   do not ignore any requested muscle.
+2. Every main exercise's primary_muscle MUST be one of the target muscles.
+   Do not pick chest/back/legs/etc. just because they secondarily hit an arm muscle
+   (e.g. no bench press on a biceps+triceps day).
+3. For EACH main exercise, also pick {alternatives_per_exercise} alternative
+   exercise ids from the catalog that train a similar movement / same primary muscle.
+   Alternatives must not duplicate the main list.
 
 Return JSON exactly in this shape:
 {{
@@ -319,11 +308,7 @@ Return JSON exactly in this shape:
         if not ex or str(ex.id) in used:
             continue
         if muscle_groups:
-            ok = (
-                ex.primary_muscle in muscle_groups
-                or any(sm in muscle_groups for sm in (ex.secondary_muscles or []))
-            )
-            if not ok:
+            if ex.primary_muscle not in muscle_groups:
                 continue
 
         used.add(str(ex.id))
@@ -348,9 +333,16 @@ Return JSON exactly in this shape:
                 all_exercises,
                 ctx,
                 exclude_ids=used | {str(a.id) for a in alt_exercises},
-                limit=alternatives_per_exercise - len(alt_exercises),
+                limit=alternatives_per_exercise - len(alt_exercises) + 4,
             )
-            alt_exercises.extend(extra)
+            for alt in extra:
+                if muscle_groups and alt.primary_muscle not in muscle_groups:
+                    continue
+                if str(alt.id) in used or str(alt.id) in {str(a.id) for a in alt_exercises}:
+                    continue
+                alt_exercises.append(alt)
+                if len(alt_exercises) >= alternatives_per_exercise:
+                    break
 
         entry["alternatives"] = [
             _alt_payload(a, ctx) for a in alt_exercises[:alternatives_per_exercise]

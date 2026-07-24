@@ -494,13 +494,6 @@ export function WorkoutPlanEditor({
               {ex.notes && (
                 <p className="text-[11px] text-muted-foreground">{ex.notes}</p>
               )}
-              {(ex.load_display === "per_hand" || ex.weight_irrelevant) && (
-                <p className="text-[11px] text-amber-500/90">
-                  {ex.weight_irrelevant
-                    ? "Bodyweight — weight is not used for this movement."
-                    : "Log the weight of each dumbbell (not both combined)."}
-                </p>
-              )}
               {altFor === ex.exercise_id && (
                 <div className="rounded-lg border bg-muted/30 p-2 space-y-1">
                   <p className="text-xs font-medium text-muted-foreground">Alternatives</p>

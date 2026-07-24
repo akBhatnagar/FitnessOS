@@ -193,13 +193,6 @@ export function WorkoutExecutionView({
                 </CardTitle>
               </CardHeader>
               <CardContent className="px-4 pb-4 pt-0 space-y-2">
-                {(ex.load_display === "per_hand" || ex.weight_irrelevant) && (
-                  <p className="text-[11px] text-amber-500/90">
-                    {ex.weight_irrelevant
-                      ? "Bodyweight — enter reps only."
-                      : "Enter the weight of each dumbbell (not combined)."}
-                  </p>
-                )}
                 <div className="grid grid-cols-[2rem_1fr_1fr] gap-2 text-[10px] text-muted-foreground font-medium px-1">
                   <span>Set</span>
                   <span>{weightColumnLabel(ex)}</span>

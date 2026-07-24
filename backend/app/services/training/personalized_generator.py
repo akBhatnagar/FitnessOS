@@ -656,11 +656,18 @@ def generate_personalized_session(
     used_ids: set[str] = set(exclude)
 
     for slot in slots:
-        candidates = [
-            ex for ex in gym_exercises
-            if ex.primary_muscle in slot.primary_muscles
-            or any(sm in slot.primary_muscles for sm in (ex.secondary_muscles or []))
-        ]
+        # Muscle/mixed sessions: primary muscle only — no secondary leakage (bench≠arms)
+        if session_type in ("muscle", "mixed"):
+            candidates = [
+                ex for ex in gym_exercises
+                if ex.primary_muscle in slot.primary_muscles
+            ]
+        else:
+            candidates = [
+                ex for ex in gym_exercises
+                if ex.primary_muscle in slot.primary_muscles
+                or any(sm in slot.primary_muscles for sm in (ex.secondary_muscles or []))
+            ]
         if slot.prefer_compound:
             compounds = [ex for ex in candidates if ex.is_compound]
             if compounds:
