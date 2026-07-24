@@ -18,6 +18,7 @@ Endpoints:
 
 from __future__ import annotations
 
+import asyncio
 import re
 import uuid
 from datetime import date, datetime, timezone
@@ -230,14 +231,22 @@ async def _build_session_plan_entries(
             target = 6
         else:
             target = 5
-        entries = await generate_ai_muscle_plan(
-            session_name=session_name,
-            muscle_groups=muscle_groups or [],
-            ctx=ctx,
-            all_exercises=all_exercises,
-            exclude_exercise_ids=exclude,
-            target_exercises=target,
-        )
+        try:
+            entries = await asyncio.wait_for(
+                generate_ai_muscle_plan(
+                    session_name=session_name,
+                    muscle_groups=muscle_groups or [],
+                    ctx=ctx,
+                    all_exercises=all_exercises,
+                    exclude_exercise_ids=exclude,
+                    target_exercises=target,
+                    alternatives_per_exercise=2,
+                ),
+                timeout=25.0,
+            )
+        except Exception as exc:
+            logger.warning("AI plan unavailable, using rule engine", error=str(exc))
+            entries = None
 
     if not entries:
         slots = generate_personalized_session(
@@ -253,6 +262,7 @@ async def _build_session_plan_entries(
             exercise_by_id=exercise_by_id,
             all_exercises=all_exercises,
             ctx=ctx,
+            alternatives_per_exercise=2,
         )
 
     return entries, ctx
@@ -839,15 +849,19 @@ async def get_session_plan(
 
     # Attach load display metadata + fresh alternatives for Alt button
     if entries:
-        ctx = await load_training_context(db, user, "fat_loss")
-        all_exercises = list((await db.execute(select(Exercise))).scalars().all())
-        exercise_by_id = {str(e.id): e for e in all_exercises}
-        entries = enrich_entries_with_alternatives(
-            entries,
-            exercise_by_id=exercise_by_id,
-            all_exercises=all_exercises,
-            ctx=ctx,
-        )
+        try:
+            ctx = await load_training_context(db, user, "fat_loss")
+            all_exercises = list((await db.execute(select(Exercise))).scalars().all())
+            exercise_by_id = {str(e.id): e for e in all_exercises}
+            entries = enrich_entries_with_alternatives(
+                entries,
+                exercise_by_id=exercise_by_id,
+                all_exercises=all_exercises,
+                ctx=ctx,
+                alternatives_per_exercise=2,
+            )
+        except Exception as exc:
+            logger.warning("Failed to enrich saved plan", error=str(exc), session_id=session_id)
 
     return _plan_entries_to_response(
         entries,

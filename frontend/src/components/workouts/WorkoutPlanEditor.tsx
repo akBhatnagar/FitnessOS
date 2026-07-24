@@ -119,21 +119,28 @@ export function WorkoutPlanEditor({
     setLoading(true);
     try {
       if (config.sessionId) {
-        const res = await apiClient.get(`/api/v1/workouts/sessions/${config.sessionId}/plan`);
-        setPlan(res.data);
-        setExercises(withSeedExercise(res.data.exercises ?? []));
-      } else if (config.preview) {
-        const res = await apiClient.post("/api/v1/workouts/sessions/preview", {
-          session_name: config.sessionName,
-          muscle_groups: config.muscleGroups,
-          generation_type: config.preview.generation_type,
-          goal: config.preview.goal ?? "fat_loss",
+        const res = await apiClient.get(`/api/v1/workouts/sessions/${config.sessionId}/plan`, {
+          timeout: 90_000,
         });
         setPlan(res.data);
         setExercises(withSeedExercise(res.data.exercises ?? []));
+      } else if (config.preview) {
+        const res = await apiClient.post(
+          "/api/v1/workouts/sessions/preview",
+          {
+            session_name: config.sessionName,
+            muscle_groups: config.muscleGroups,
+            generation_type: config.preview.generation_type,
+            goal: config.preview.goal ?? "fat_loss",
+          },
+          { timeout: 120_000 },
+        );
+        setPlan(res.data);
+        setExercises(withSeedExercise(res.data.exercises ?? []));
       }
-    } catch {
-      toast.error("Failed to load workout plan.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to load workout plan.";
+      toast.error(msg.includes("timeout") ? "Plan generation timed out — try again." : msg);
     } finally {
       setLoading(false);
     }

@@ -223,7 +223,7 @@ async def generate_ai_muscle_plan(
             0 if ex.is_compound else 1,
             ex.name,
         ),
-    )[:80]
+    )[:60]
 
     by_id = {str(ex.id): ex for ex in ranked}
     by_name = {ex.name.lower(): ex for ex in ranked}
@@ -289,7 +289,7 @@ Return JSON exactly in this shape:
 }}"""
 
     try:
-        llm = get_llm(temperature=0.35, max_tokens=2000)
+        llm = get_llm(temperature=0.35, max_tokens=1400)
         response = await llm.ainvoke([
             SystemMessage(content=system),
             HumanMessage(content=user_prompt),
