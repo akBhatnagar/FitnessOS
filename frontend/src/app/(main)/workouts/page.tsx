@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { format } from "date-fns";
+import { format, isValid, parseISO } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -10,13 +10,15 @@ import { Separator } from "@/components/ui/separator";
 import {
   Dumbbell, Play, CheckCircle2, Clock, ChevronRight,
   Search, Plus, Zap, TrendingUp, BarChart3, RotateCcw,
-  Trophy, Target, AlertCircle, Loader2, Moon,
+  Trophy, Target, AlertCircle, Loader2, Moon, Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiClient } from "@/services/api";
 import { toast } from "sonner";
 import { DatePickerBar, todayStr } from "@/components/shared/DatePickerBar";
 import { MuscleWorkoutView } from "@/components/workouts/MuscleWorkoutView";
+import { WorkoutPlanEditor, PlanEditorConfig } from "@/components/workouts/WorkoutPlanEditor";
+import { WorkoutExecutionView } from "@/components/workouts/WorkoutExecutionView";
 import {
   LOG_MUSCLE_OPTIONS,
   MIXED_WORKOUT,
@@ -77,12 +79,16 @@ interface Suggestion {
   notes: string[];
 }
 
-type View = "overview" | "active_session" | "exercise_library" | "muscle_workout";
+type View = "overview" | "plan_editor" | "workout_execution" | "active_session" | "exercise_library" | "muscle_workout";
 
 interface MuscleWorkoutState {
   session: Session;
   dbMuscles: string[];
   defaultPrimaryMuscle: string;
+}
+
+interface WorkoutExecutionState {
+  session: Session;
 }
 
 const QUICK_SESSIONS = [
@@ -91,6 +97,8 @@ const QUICK_SESSIONS = [
   { name: "Legs Day", muscles: ["quads", "hamstrings", "glutes"] },
 ];
 
+const ALL_DB_MUSCLES = [...new Set(LOG_MUSCLE_OPTIONS.flatMap((m) => m.dbMuscles))];
+
 const MUSCLE_COLORS: Record<string, string> = {
   chest: "bg-blue-500/20 text-blue-400",
   lats: "bg-purple-500/20 text-purple-400",
@@ -98,6 +106,7 @@ const MUSCLE_COLORS: Record<string, string> = {
   front_deltoid: "bg-yellow-500/20 text-yellow-400",
   side_deltoid: "bg-yellow-500/20 text-yellow-400",
   rear_deltoid: "bg-yellow-500/20 text-yellow-400",
+  traps: "bg-violet-500/20 text-violet-400",
   biceps: "bg-red-500/20 text-red-400",
   triceps: "bg-orange-500/20 text-orange-400",
   quads: "bg-green-500/20 text-green-400",
@@ -115,6 +124,15 @@ function MuscleTag({ muscle }: { muscle: string }) {
       {muscle.replace("_", " ")}
     </span>
   );
+}
+
+/** Format a YYYY-MM-DD (or ISO) session date for display — date only, no time. */
+function formatSessionDay(dateStr: string): string {
+  const raw = (dateStr || "").slice(0, 10);
+  if (!raw) return "";
+  const parsed = parseISO(raw);
+  if (!isValid(parsed)) return raw;
+  return format(parsed, "EEE, MMM d");
 }
 
 // ─── Set Logger ─────────────────────────────────────────────────────────────
@@ -296,13 +314,33 @@ function ActiveSessionView({
   const [loggedSets, setLoggedSets] = useState<Record<string, SetRow[]>>({});
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Exercise[]>([]);
+  const [plannedExercises, setPlannedExercises] = useState<Exercise[]>([]);
   const [completing, setCompleting] = useState(false);
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
     apiClient
       .get(`/api/v1/workouts/sessions/${session.id}/sets`)
-      .then((res) => setLoggedSets(groupSetsByExercise(res.data)))
+      .then(async (res) => {
+        const actualRows = res.data.filter(
+          (r: { actual_weight_kg?: number | null; actual_reps?: number | null }) =>
+            r.actual_weight_kg != null && r.actual_reps != null,
+        );
+        setLoggedSets(groupSetsByExercise(actualRows));
+
+        const seen = new Set<string>();
+        const planned: Exercise[] = [];
+        for (const row of res.data) {
+          if (seen.has(row.exercise_id)) continue;
+          seen.add(row.exercise_id);
+          try {
+            const detail = await apiClient.get(`/api/v1/workouts/exercises/${row.exercise_id}`);
+            planned.push(detail.data);
+          } catch { /* ignore */ }
+        }
+        setPlannedExercises(planned);
+        if (planned.length === 1) setSelectedExercise(planned[0]);
+      })
       .catch(() => { /* ignore — fresh session */ });
   }, [session.id]);
 
@@ -377,6 +415,26 @@ function ActiveSessionView({
           <div className="text-xs text-muted-foreground">{totalSets} sets logged</div>
         </div>
       </div>
+
+      {plannedExercises.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+            Personalized for you
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {plannedExercises.map((ex) => (
+              <Button
+                key={ex.id}
+                variant={selectedExercise?.id === ex.id ? "default" : "outline"}
+                size="sm"
+                onClick={() => selectExercise(ex)}
+              >
+                {ex.name}
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Exercise search */}
       <div className="relative">
@@ -481,8 +539,26 @@ export default function WorkoutsPage() {
   const [comboOpen, setComboOpen] = useState(false);
   const [comboMuscle1, setComboMuscle1] = useState(LOG_MUSCLE_OPTIONS[0].key);
   const [comboMuscle2, setComboMuscle2] = useState(LOG_MUSCLE_OPTIONS[1].key);
+  const [generateOpen, setGenerateOpen] = useState(false);
+  const [generateStep, setGenerateStep] = useState<"pick" | "muscle" | "ppl">("pick");
+  const [planEditor, setPlanEditor] = useState<PlanEditorConfig | null>(null);
+  const [workoutExecution, setWorkoutExecution] = useState<WorkoutExecutionState | null>(null);
+  const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
+  const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
+  const [customExerciseOpen, setCustomExerciseOpen] = useState(false);
+  const [customExerciseName, setCustomExerciseName] = useState("");
+  const [customExerciseMuscle, setCustomExerciseMuscle] = useState(ALL_DB_MUSCLES[0]);
+  const [addingCustomExercise, setAddingCustomExercise] = useState(false);
 
   const isToday = selectedDate === todayStr();
+
+  const removableSessions = sessions.filter((s) => !isRestDaySession(s.session_name));
+  const showRemoveOption = removableSessions.length >= 1;
+
+  const closeGenerate = () => {
+    setGenerateOpen(false);
+    setGenerateStep("pick");
+  };
 
   useEffect(() => {
     loadData(selectedDate);
@@ -490,15 +566,26 @@ export default function WorkoutsPage() {
 
   const loadData = async (date = selectedDate) => {
     setLoading(true);
+    let historyLoaded = false;
     try {
-      const [todayRes, historyRes] = await Promise.all([
-        apiClient.get("/api/v1/workouts/sessions/today", { params: { date } }),
-        apiClient.get("/api/v1/workouts/sessions/history?limit=5"),
-      ]);
-      setSessions(todayRes.data);
+      // Clean unused AI plan fillers once per load (safe no-op if none)
+      await apiClient.post("/api/v1/workouts/plans/cleanup-unused").catch(() => null);
+      const historyRes = await apiClient.get("/api/v1/workouts/sessions/history?limit=20");
       setRecentHistory(historyRes.data);
+      historyLoaded = true;
     } catch {
-      toast.error("Failed to load workout data.");
+      /* history failure handled below */
+    }
+    try {
+      const todayRes = await apiClient.get("/api/v1/workouts/sessions/today", { params: { date } });
+      setSessions(todayRes.data ?? []);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      if (msg.includes("future dates")) {
+        setSessions([]);
+      } else if (!historyLoaded) {
+        toast.error("Failed to load workout data.");
+      }
     } finally {
       setLoading(false);
     }
@@ -518,12 +605,56 @@ export default function WorkoutsPage() {
     }
   }, [view]);
 
+  const openPlanPreview = (
+    sessionName: string,
+    dbMuscles: string[],
+    generationType: string,
+  ) => {
+    closeGenerate();
+    setPlanEditor({
+      sessionName,
+      scheduledDate: selectedDate,
+      muscleGroups: dbMuscles,
+      preview: { generation_type: generationType, goal: "fat_loss" },
+    });
+    setView("plan_editor");
+  };
+
+  const openPlanEditorForSession = (session: Session) => {
+    setPlanEditor({
+      sessionId: session.id,
+      sessionName: session.session_name,
+      scheduledDate: session.scheduled_date,
+      muscleGroups: session.muscle_groups,
+    });
+    setView("plan_editor");
+  };
+
+  const openWorkoutExecution = (session: Session) => {
+    setWorkoutExecution({ session });
+    setView("workout_execution");
+  };
+
   const resumeSession = async (session: Session) => {
     if (isRestDaySession(session.session_name)) {
       toast.info("Rest day — no workout to resume.");
       return;
     }
     try {
+      const planRes = await apiClient.get(`/api/v1/workouts/sessions/${session.id}/plan`);
+      const hasPlan = (planRes.data.exercises?.length ?? 0) > 0;
+
+      if (hasPlan) {
+        if (session.status === "scheduled") {
+          openPlanEditorForSession(session);
+          return;
+        }
+        if (session.status === "in_progress") {
+          openWorkoutExecution(session);
+          return;
+        }
+      }
+
       if (session.status === "scheduled") {
         await apiClient.post(`/api/v1/workouts/sessions/${session.id}/start`);
       }
@@ -550,16 +681,49 @@ export default function WorkoutsPage() {
     }
   };
 
-  const generatePlan = async () => {
+  const inferGenerationType = (sessionName: string, dbMuscles: string[]): string => {
+    const n = sessionName.toLowerCase();
+    if (sessionName === MIXED_WORKOUT.label) return "mixed";
+    if (n.includes("push")) return "push";
+    if (n.includes("pull")) return "pull";
+    if (n.includes("leg")) return "legs";
+    return dbMuscles.length > 4 ? "mixed" : "muscle";
+  };
+
+  const generatePPLPlan = async () => {
     setGeneratingPlan(true);
     try {
       const res = await apiClient.post("/api/v1/workouts/plans/generate", {
         plan_type: "ppl",
         days_per_week: 5,
         goal: "fat_loss",
+        start_date: selectedDate,
       });
-      toast.success(`Plan generated: ${res.data.plan_name}`);
-      loadData();
+      const weekSessions: {
+        id?: string;
+        name: string;
+        date: string;
+        muscle_groups?: string[];
+        exercise_names?: string[];
+      }[] = res.data.week_1_sessions ?? [];
+      const forDate = weekSessions.find((s) => s.date === selectedDate);
+      closeGenerate();
+      await loadData(selectedDate);
+      if (forDate?.id) {
+        openPlanEditorForSession({
+          id: forDate.id,
+          session_name: forDate.name,
+          scheduled_date: forDate.date,
+          status: "scheduled",
+          muscle_groups: forDate.muscle_groups ?? [],
+          duration_minutes: null,
+          sets_logged: 0,
+          effort_rating: null,
+        });
+        toast.success(`${forDate.name} ready — review your plan below`);
+      } else {
+        toast.success(`Plan created: ${res.data.plan_name}`);
+      }
     } catch {
       toast.error("Failed to generate plan.");
     } finally {
@@ -567,75 +731,47 @@ export default function WorkoutsPage() {
     }
   };
 
-  const createSessionForDate = async (sessionName: string, muscleGroups: string[] = []) => {
-    setCreatingSession(true);
-    try {
-      await apiClient.post("/api/v1/workouts/sessions", {
-        session_name: sessionName,
-        scheduled_date: selectedDate,
-        muscle_groups: muscleGroups,
-      });
-      toast.success(`${sessionName} added`);
-      await loadData();
-    } catch {
-      toast.error("Failed to create session.");
-    } finally {
-      setCreatingSession(false);
+  const handleGeneratePPL = () => {
+    if (isToday) {
+      generatePPLPlan();
+    } else {
+      setGenerateStep("ppl");
     }
   };
 
-  const startMuscleWorkout = async (
+  const handleGenerateMusclePick = (key: string) => {
+    const option = getLogMuscleOption(key);
+    if (!option) return;
+    openPlanPreview(`${option.label} Workout`, option.dbMuscles, "muscle");
+  };
+
+  const handleGenerateMixed = () => {
+    openPlanPreview(MIXED_WORKOUT.label, MIXED_WORKOUT.dbMuscles, "mixed");
+  };
+
+  const handleGeneratePPLDay = (name: string, muscles: string[]) => {
+    openPlanPreview(name, muscles, inferGenerationType(name, muscles));
+  };
+
+  const createSessionForDate = (sessionName: string, muscleGroups: string[] = []) => {
+    openPlanPreview(sessionName, muscleGroups, inferGenerationType(sessionName, muscleGroups));
+  };
+
+  const startMuscleWorkout = (
     sessionName: string,
     dbMuscles: string[],
-    defaultPrimaryMuscle: string,
   ) => {
-    setCreatingSession(true);
-    try {
-      const res = await apiClient.post("/api/v1/workouts/sessions", {
-        session_name: sessionName,
-        scheduled_date: selectedDate,
-        muscle_groups: dbMuscles,
-      });
-      await apiClient.post(`/api/v1/workouts/sessions/${res.data.id}/start`);
-      setMuscleWorkout({
-        session: {
-          id: res.data.id,
-          session_name: sessionName,
-          scheduled_date: selectedDate,
-          status: "in_progress",
-          muscle_groups: dbMuscles,
-          duration_minutes: null,
-          sets_logged: 0,
-          effort_rating: null,
-        },
-        dbMuscles,
-        defaultPrimaryMuscle,
-      });
-      setView("muscle_workout");
-      setComboOpen(false);
-    } catch {
-      toast.error("Failed to start workout.");
-    } finally {
-      setCreatingSession(false);
-    }
+    openPlanPreview(sessionName, dbMuscles, inferGenerationType(sessionName, dbMuscles));
   };
 
   const handleSingleMuscle = (key: string) => {
     const option = getLogMuscleOption(key);
     if (!option) return;
-    startMuscleWorkout(
-      `${option.label} Workout`,
-      option.dbMuscles,
-      option.dbMuscles[0],
-    );
+    startMuscleWorkout(`${option.label} Workout`, option.dbMuscles);
   };
 
   const handleMixedWorkout = () => {
-    startMuscleWorkout(
-      MIXED_WORKOUT.label,
-      MIXED_WORKOUT.dbMuscles,
-      "chest",
-    );
+    startMuscleWorkout(MIXED_WORKOUT.label, MIXED_WORKOUT.dbMuscles);
   };
 
   const handleComboWorkout = () => {
@@ -647,7 +783,71 @@ export default function WorkoutsPage() {
       return;
     }
     const dbMuscles = buildComboMuscles(m1, m2);
-    startMuscleWorkout(buildComboLabel(m1, m2), dbMuscles, m1.dbMuscles[0]);
+    startMuscleWorkout(buildComboLabel(m1, m2), dbMuscles);
+    setComboOpen(false);
+  };
+
+  const handleAddCustomExercise = async () => {
+    const name = customExerciseName.trim();
+    if (!name) {
+      toast.error("Enter an exercise name.");
+      return;
+    }
+    setAddingCustomExercise(true);
+    try {
+      const res = await apiClient.post("/api/v1/workouts/exercises", {
+        name,
+        primary_muscle: customExerciseMuscle,
+        is_compound: false,
+      });
+      const created = res.data;
+      const muscleGroup = LOG_MUSCLE_OPTIONS.find((m) =>
+        m.dbMuscles.includes(customExerciseMuscle),
+      )?.dbMuscles ?? [customExerciseMuscle];
+      setCustomExerciseOpen(false);
+      setCustomExerciseName("");
+      setPlanEditor({
+        sessionName: `${created.name} Workout`,
+        scheduledDate: selectedDate,
+        muscleGroups: muscleGroup,
+        preview: { generation_type: "muscle", goal: "fat_loss" },
+        seedExercise: {
+          exercise_id: created.id,
+          name: created.name,
+          primary_muscle: created.primary_muscle,
+          is_compound: created.is_compound ?? false,
+        },
+      });
+      setView("plan_editor");
+      toast.success(`${created.name} added to your library`);
+    } catch {
+      toast.error("Failed to add custom exercise.");
+    } finally {
+      setAddingCustomExercise(false);
+    }
+  };
+
+  const deleteSession = async (session: Session) => {
+    const label = session.session_name;
+    setDeletingSessionId(session.id);
+    setConfirmRemoveId(null);
+    try {
+      await apiClient.delete(`/api/v1/workouts/sessions/${session.id}`);
+      if (workoutExecution?.session.id === session.id) {
+        setWorkoutExecution(null);
+        setView("overview");
+      }
+      if (planEditor?.sessionId === session.id) {
+        setPlanEditor(null);
+        setView("overview");
+      }
+      toast.success(`Removed ${label}`);
+      await loadData();
+    } catch {
+      toast.error("Failed to remove session.");
+    } finally {
+      setDeletingSessionId(null);
+    }
   };
 
   const logRestDay = async () => {
@@ -671,6 +871,43 @@ export default function WorkoutsPage() {
       setCreatingSession(false);
     }
   };
+
+  if (view === "plan_editor" && planEditor) {
+    return (
+      <WorkoutPlanEditor
+        config={planEditor}
+        onBack={() => { setView("overview"); setPlanEditor(null); loadData(); }}
+        onSaved={() => { setView("overview"); setPlanEditor(null); loadData(); }}
+        onStartWorkout={(saved) => {
+          setPlanEditor(null);
+          openWorkoutExecution({
+            id: saved.id,
+            session_name: saved.session_name,
+            scheduled_date: planEditor.scheduledDate,
+            status: "in_progress",
+            muscle_groups: saved.muscle_groups ?? planEditor.muscleGroups,
+            duration_minutes: null,
+            sets_logged: 0,
+            effort_rating: null,
+          });
+        }}
+      />
+    );
+  }
+
+  if (view === "workout_execution" && workoutExecution) {
+    return (
+      <WorkoutExecutionView
+        session={workoutExecution.session}
+        onBack={() => { setView("overview"); setWorkoutExecution(null); loadData(); }}
+        onEditPlan={() => {
+          openPlanEditorForSession(workoutExecution.session);
+          setWorkoutExecution(null);
+        }}
+        onComplete={() => { setView("overview"); setWorkoutExecution(null); loadData(); }}
+      />
+    );
+  }
 
   if (view === "muscle_workout" && muscleWorkout) {
     return (
@@ -764,6 +1001,128 @@ export default function WorkoutsPage() {
         <DatePickerBar value={selectedDate} onChange={setSelectedDate} />
       </div>
 
+      {/* Generate workout */}
+      <div>
+        <Button
+          className="w-full"
+          onClick={() => {
+            setGenerateOpen((v) => !v);
+            setGenerateStep("pick");
+          }}
+          disabled={generatingPlan || creatingSession}
+        >
+          <Zap className="h-4 w-4 mr-2" />
+          Generate
+        </Button>
+
+        {generateOpen && (
+          <Card className="mt-2">
+            <CardContent className="p-4 space-y-3">
+              {generateStep === "pick" && (
+                <>
+                  <p className="text-sm font-medium">What would you like to generate?</p>
+                  <div className="grid gap-2">
+                    <Button
+                      variant="outline"
+                      className="justify-start h-auto py-3"
+                      disabled={generatingPlan}
+                      onClick={handleGeneratePPL}
+                    >
+                      {generatingPlan ? (
+                        <Loader2 className="h-4 w-4 animate-spin mr-2 shrink-0" />
+                      ) : (
+                        <Zap className="h-4 w-4 mr-2 shrink-0" />
+                      )}
+                      <div className="text-left">
+                        <div className="font-semibold">Push / Pull / Legs</div>
+                        <div className="text-xs text-muted-foreground font-normal">
+                          {isToday
+                            ? "Full week plan starting today — appears in Today's Sessions"
+                            : "Log Push, Pull, or Legs for this date"}
+                        </div>
+                      </div>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="justify-start h-auto py-3"
+                      onClick={() => setGenerateStep("muscle")}
+                    >
+                      <Dumbbell className="h-4 w-4 mr-2 shrink-0" />
+                      <div className="text-left">
+                        <div className="font-semibold">Specific Muscle</div>
+                        <div className="text-xs text-muted-foreground font-normal">
+                          Back, chest, biceps, legs, etc.
+                        </div>
+                      </div>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="justify-start h-auto py-3"
+                      onClick={handleGenerateMixed}
+                    >
+                      <Plus className="h-4 w-4 mr-2 shrink-0" />
+                      <div className="text-left">
+                        <div className="font-semibold">Mixed Workout</div>
+                        <div className="text-xs text-muted-foreground font-normal">
+                          Pick exercises from any muscle group
+                        </div>
+                      </div>
+                    </Button>
+                  </div>
+                </>
+              )}
+
+              {generateStep === "muscle" && (
+                <>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium">Choose a muscle group</p>
+                    <Button variant="ghost" size="sm" onClick={() => setGenerateStep("pick")}>Back</Button>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {LOG_MUSCLE_OPTIONS.map((m) => (
+                      <Button
+                        key={m.key}
+                        variant="outline"
+                        size="sm"
+                        className="h-auto py-2.5 flex-col gap-0.5"
+                        onClick={() => handleGenerateMusclePick(m.key)}
+                      >
+                        <Dumbbell className="h-4 w-4" />
+                        <span className="text-xs">{m.label}</span>
+                      </Button>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {generateStep === "ppl" && (
+                <>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium">Which day for {selectedDate}?</p>
+                    <Button variant="ghost" size="sm" onClick={() => setGenerateStep("pick")}>Back</Button>
+                  </div>
+                  <div className="grid gap-2">
+                    {QUICK_SESSIONS.map((s) => (
+                      <Button
+                        key={s.name}
+                        variant="outline"
+                        onClick={() => handleGeneratePPLDay(s.name, s.muscles)}
+                      >
+                        {s.name}
+                      </Button>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              <Button variant="ghost" size="sm" className="w-full" onClick={closeGenerate}>
+                Cancel
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
       {/* Log by muscle group */}
       <div>
         <h2 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wider">
@@ -845,6 +1204,53 @@ export default function WorkoutsPage() {
           </Card>
         )}
         <div className="mt-2">
+          {!customExerciseOpen ? (
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => setCustomExerciseOpen(true)}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add custom exercise
+            </Button>
+          ) : (
+            <Card>
+              <CardContent className="p-4 space-y-3">
+                <p className="text-sm font-medium">Custom exercise</p>
+                <Input
+                  value={customExerciseName}
+                  onChange={(e) => setCustomExerciseName(e.target.value)}
+                  placeholder="e.g. Machine chest press"
+                />
+                <div>
+                  <label className="text-xs text-muted-foreground">Primary muscle</label>
+                  <select
+                    value={customExerciseMuscle}
+                    onChange={(e) => setCustomExerciseMuscle(e.target.value)}
+                    className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                  >
+                    {ALL_DB_MUSCLES.map((m) => (
+                      <option key={m} value={m}>{m.replace(/_/g, " ")}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="ghost" className="flex-1" onClick={() => setCustomExerciseOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button className="flex-1" onClick={handleAddCustomExercise} disabled={addingCustomExercise}>
+                    {addingCustomExercise ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      "Create & plan workout"
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+        <div className="mt-2">
           <Button
             variant="outline"
             disabled={creatingSession || sessions.some((s) => isRestDaySession(s.session_name))}
@@ -887,10 +1293,9 @@ export default function WorkoutsPage() {
               </div>
               {isToday ? (
                 <div className="flex flex-col gap-2 w-full max-w-xs">
-                  <Button onClick={generatePlan} disabled={generatingPlan}>
-                    {generatingPlan ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Zap className="h-4 w-4 mr-2" />}
-                    Generate Push/Pull/Legs Plan
-                  </Button>
+                  <p className="text-xs text-muted-foreground">
+                    Use the <strong>Generate</strong> button above to create a plan, or log a rest day.
+                  </p>
                   <Button variant="outline" onClick={logRestDay} disabled={creatingSession}>
                     {creatingSession ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Moon className="h-4 w-4 mr-2" />}
                     Log Rest Day
@@ -898,6 +1303,9 @@ export default function WorkoutsPage() {
                 </div>
               ) : (
                 <div className="flex flex-col gap-2 w-full max-w-xs">
+                  <p className="text-xs text-muted-foreground">
+                    Use <strong>Generate</strong> above, or quickly log a day:
+                  </p>
                   {QUICK_SESSIONS.map((s) => (
                     <Button
                       key={s.name}
@@ -915,8 +1323,14 @@ export default function WorkoutsPage() {
           </Card>
         ) : (
           <div className="space-y-3">
+            {showRemoveOption && removableSessions.length > 1 && (
+              <p className="text-sm text-muted-foreground px-1">
+                You have {removableSessions.length} workouts for this date — use <strong>Remove</strong> on any you don&apos;t need.
+              </p>
+            )}
             {sessions.map((s) => {
               const isRest = isRestDaySession(s.session_name);
+              const confirming = confirmRemoveId === s.id;
               return (
               <Card key={s.id} className={cn(
                 "transition-all",
@@ -924,8 +1338,8 @@ export default function WorkoutsPage() {
                 isRest && "border-muted",
               )}>
                 <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         {isRest && <Moon className="h-5 w-5 text-muted-foreground" />}
                         <span className="font-bold text-lg">{s.session_name}</span>
@@ -945,17 +1359,62 @@ export default function WorkoutsPage() {
                       {isRest ? (
                         <p className="text-xs text-muted-foreground mt-1">Recovery day — no training logged</p>
                       ) : s.sets_logged > 0 ? (
-                        <p className="text-xs text-muted-foreground mt-1">{s.sets_logged} sets logged</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {s.status === "scheduled" ? "Plan ready · " : ""}{s.sets_logged} sets{s.status === "scheduled" ? " planned" : " logged"}
+                        </p>
                       ) : null}
                     </div>
-                    <div>
-                      {s.status === "completed" || isRest ? (
-                        <CheckCircle2 className="h-8 w-8 text-green-400" />
+                    <div className="flex flex-col items-end gap-2 shrink-0">
+                      {confirming ? (
+                        <div className="flex flex-col gap-2 items-stretch min-w-[140px]">
+                          <p className="text-xs text-muted-foreground text-right">Remove this workout?</p>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            disabled={deletingSessionId === s.id}
+                            onClick={() => deleteSession(s)}
+                          >
+                            {deletingSessionId === s.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              "Yes, remove"
+                            )}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setConfirmRemoveId(null)}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
                       ) : (
-                        <Button onClick={() => resumeSession(s)} size="sm">
-                          <Play className="h-4 w-4 mr-1" />
-                          {s.status === "in_progress" ? "Resume" : "Start"}
-                        </Button>
+                        <>
+                          {showRemoveOption && !isRest && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-destructive border-destructive/40 hover:bg-destructive/10"
+                              disabled={deletingSessionId === s.id}
+                              onClick={() => setConfirmRemoveId(s.id)}
+                            >
+                              <Trash2 className="h-4 w-4 mr-1" />
+                              Remove
+                            </Button>
+                          )}
+                          {s.status === "completed" || isRest ? (
+                            <CheckCircle2 className="h-8 w-8 text-green-400" />
+                          ) : (
+                            <Button onClick={() => resumeSession(s)} size="sm">
+                              <Play className="h-4 w-4 mr-1" />
+                              {s.status === "in_progress"
+                                ? "Resume"
+                                : s.sets_logged > 0
+                                  ? "Review Plan"
+                                  : "Start"}
+                            </Button>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>
@@ -981,37 +1440,51 @@ export default function WorkoutsPage() {
         )}
       </div>
 
-      {/* Recent History */}
-      {recentHistory.length > 0 && (
-        <div>
-          <h2 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wider">
-            Recent Sessions
-          </h2>
+      {/* Recent workouts — all dates, click to open that day */}
+      <div>
+        <h2 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wider">
+          Recent Workouts
+        </h2>
+        {recentHistory.length === 0 ? (
+          <p className="text-sm text-muted-foreground px-1">No workouts logged yet.</p>
+        ) : (
           <div className="space-y-2">
-            {recentHistory.map((s) => (
-              <div key={s.id} className="flex items-center justify-between rounded-lg border px-4 py-3">
+            {recentHistory.map((s) => {
+              const sessionDate = s.date ?? s.scheduled_date ?? "";
+              const isSelected = sessionDate === selectedDate;
+              return (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => setSelectedDate(sessionDate.slice(0, 10))}
+                className={cn(
+                  "flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left transition-colors hover:bg-muted/40",
+                  isSelected && "border-primary/50 bg-primary/5",
+                )}
+              >
                 <div>
                   <span className="font-medium text-sm">{s.session_name}</span>
                   <p className="text-xs text-muted-foreground">
-                    {format(new Date(s.date ?? s.scheduled_date ?? ""), "EEE, MMM d")}
-                    {s.duration_minutes && ` · ${s.duration_minutes}m`}
+                    {formatSessionDay(sessionDate)}
+                    {s.sets_logged ? ` · ${s.sets_logged} sets` : ""}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="flex gap-1">
+                  <Badge variant={
+                    s.status === "completed" ? "success" :
+                    s.status === "in_progress" ? "default" : "secondary"
+                  } className="text-[10px] capitalize">
+                    {(s.status ?? "completed").replace("_", " ")}
+                  </Badge>
+                  <div className="hidden sm:flex gap-1">
                     {(s.muscle_groups ?? []).slice(0, 2).map((m) => <MuscleTag key={m} muscle={m} />)}
                   </div>
-                  {s.effort_rating && (
-                    <Badge variant="outline" className="text-[10px]">
-                      Effort {s.effort_rating}/10
-                    </Badge>
-                  )}
                 </div>
-              </div>
-            ))}
+              </button>
+            );})}
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
