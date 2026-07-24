@@ -12,10 +12,12 @@ import { apiClient } from "@/services/api";
 import { toast } from "sonner";
 import {
   PlanExercise,
+  PlanAlternative,
   WorkoutPlanData,
   computeSummary,
   defaultSets,
   renumberSets,
+  weightColumnLabel,
 } from "@/lib/workoutPlan";
 import { ALL_DB_MUSCLES } from "@/lib/workoutMuscles";
 
@@ -27,6 +29,10 @@ interface LibraryExercise {
   tips?: string;
   type?: string;
   tags?: string[];
+  equipment?: string[];
+  weight_irrelevant?: boolean;
+  load_display?: string;
+  load_label?: string;
   prescription?: {
     sets: number;
     reps_min: number;
@@ -89,7 +95,7 @@ export function WorkoutPlanEditor({
   );
   const [addingCustom, setAddingCustom] = useState(false);
   const [altFor, setAltFor] = useState<string | null>(null);
-  const [alternatives, setAlternatives] = useState<LibraryExercise[]>([]);
+  const [alternatives, setAlternatives] = useState<Array<LibraryExercise | PlanAlternative>>([]);
   const [loadingAlts, setLoadingAlts] = useState(false);
 
   const withSeedExercise = useCallback((list: PlanExercise[]): PlanExercise[] => {
@@ -325,6 +331,15 @@ export function WorkoutPlanEditor({
 
   const loadAlternatives = async (ex: PlanExercise) => {
     setAltFor(ex.exercise_id);
+    // Prefer alternatives baked into the AI/plan response — no extra API call
+    if (ex.alternatives && ex.alternatives.length > 0) {
+      const inPlan = new Set(exercises.map((e) => e.exercise_id));
+      const filtered = ex.alternatives.filter((a) => !inPlan.has(a.id));
+      setAlternatives(filtered);
+      setLoadingAlts(false);
+      if (filtered.length === 0) toast.info("No unused alternatives for this exercise.");
+      return;
+    }
     setLoadingAlts(true);
     try {
       const exclude = exercises.map((e) => e.exercise_id).join(",");
@@ -340,17 +355,17 @@ export function WorkoutPlanEditor({
     }
   };
 
-  const swapExercise = (fromId: string, alt: LibraryExercise) => {
-    const plan = alt.prescription?.set_plan;
-    const newSets = plan && plan.length > 0
-      ? plan.map((s) => ({
+  const swapExercise = (fromId: string, alt: LibraryExercise | PlanAlternative) => {
+    const planSets = alt.prescription?.set_plan;
+    const newSets = planSets && planSets.length > 0
+      ? planSets.map((s) => ({
           set_number: s.set_number,
-          weight_kg: s.weight_kg,
+          weight_kg: alt.weight_irrelevant ? 0 : s.weight_kg,
           reps: s.reps,
         }))
       : defaultSets(
           alt.prescription?.sets ?? 3,
-          alt.prescription?.weight_kg ?? 20,
+          alt.weight_irrelevant ? 0 : (alt.prescription?.weight_kg ?? 20),
           alt.prescription?.reps_min ?? 10,
         );
 
@@ -366,6 +381,11 @@ export function WorkoutPlanEditor({
               tips: alt.tips,
               notes: alt.prescription?.notes,
               sets: newSets,
+              weight_irrelevant: alt.weight_irrelevant,
+              load_display: alt.load_display,
+              load_label: alt.load_label,
+              equipment: alt.equipment,
+              alternatives: undefined,
             },
       ),
     );
@@ -374,9 +394,11 @@ export function WorkoutPlanEditor({
     const w = newSets[0]?.weight_kg;
     const r = newSets[0]?.reps;
     toast.success(
-      w != null && w > 0
-        ? `Swapped to ${alt.name} — ${newSets.length}×${r} @ ${w}kg`
-        : `Swapped to ${alt.name} — ${newSets.length} sets × ${r} reps`,
+      alt.weight_irrelevant
+        ? `Swapped to ${alt.name} — ${newSets.length} sets × ${r} reps (bodyweight)`
+        : w != null && w > 0
+          ? `Swapped to ${alt.name} — ${newSets.length}×${r} @ ${w}kg`
+          : `Swapped to ${alt.name} — ${newSets.length} sets × ${r} reps`,
     );
   };
 
@@ -462,11 +484,23 @@ export function WorkoutPlanEditor({
               </div>
             </CardHeader>
             <CardContent className="px-4 pb-4 pt-0 space-y-2">
+              {ex.notes && (
+                <p className="text-[11px] text-muted-foreground">{ex.notes}</p>
+              )}
+              {(ex.load_display === "per_hand" || ex.weight_irrelevant) && (
+                <p className="text-[11px] text-amber-500/90">
+                  {ex.weight_irrelevant
+                    ? "Bodyweight — weight is not used for this movement."
+                    : "Log the weight of each dumbbell (not both combined)."}
+                </p>
+              )}
               {altFor === ex.exercise_id && (
                 <div className="rounded-lg border bg-muted/30 p-2 space-y-1">
                   <p className="text-xs font-medium text-muted-foreground">Alternatives</p>
                   {loadingAlts ? (
                     <Loader2 className="h-4 w-4 animate-spin mx-auto my-2" />
+                  ) : alternatives.length === 0 ? (
+                    <p className="text-xs text-muted-foreground px-2 py-1">No alternatives available</p>
                   ) : (
                     alternatives.map((alt) => (
                       <button
@@ -483,9 +517,11 @@ export function WorkoutPlanEditor({
                               ? `-${alt.prescription.reps_max}`
                               : ""}{" "}
                             reps
-                            {alt.prescription.weight_kg > 0
-                              ? ` @ ${alt.prescription.weight_kg}kg`
-                              : ""}
+                            {alt.weight_irrelevant
+                              ? " · bodyweight"
+                              : alt.prescription.weight_kg > 0
+                                ? ` @ ${alt.prescription.weight_kg}kg${alt.load_display === "per_hand" ? " each" : ""}`
+                                : ""}
                           </div>
                         )}
                       </button>
@@ -498,20 +534,26 @@ export function WorkoutPlanEditor({
               )}
               <div className="grid grid-cols-[2rem_1fr_1fr_2rem] gap-2 text-[10px] text-muted-foreground font-medium px-1">
                 <span>Set</span>
-                <span>Weight (kg)</span>
+                <span>{weightColumnLabel(ex)}</span>
                 <span>Reps</span>
                 <span />
               </div>
               {ex.sets.map((s, idx) => (
                 <div key={s.set_number} className="grid grid-cols-[2rem_1fr_1fr_2rem] gap-2 items-center">
                   <span className="text-sm font-mono text-muted-foreground">{s.set_number}</span>
-                  <Input
-                    type="number"
-                    step="2.5"
-                    value={s.weight_kg}
-                    onChange={(e) => updateSet(ex.exercise_id, idx, "weight_kg", parseFloat(e.target.value) || 0)}
-                    className="h-9 font-mono"
-                  />
+                  {ex.weight_irrelevant ? (
+                    <div className="h-9 flex items-center rounded-md border bg-muted/40 px-3 text-xs text-muted-foreground">
+                      Bodyweight
+                    </div>
+                  ) : (
+                    <Input
+                      type="number"
+                      step="2.5"
+                      value={s.weight_kg}
+                      onChange={(e) => updateSet(ex.exercise_id, idx, "weight_kg", parseFloat(e.target.value) || 0)}
+                      className="h-9 font-mono"
+                    />
+                  )}
                   <Input
                     type="number"
                     value={s.reps}

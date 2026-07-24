@@ -683,10 +683,11 @@ export default function WorkoutsPage() {
   const inferGenerationType = (sessionName: string, dbMuscles: string[]): string => {
     const n = sessionName.toLowerCase();
     if (sessionName === MIXED_WORKOUT.label) return "mixed";
-    if (n.includes("push")) return "push";
-    if (n.includes("pull")) return "pull";
-    if (n.includes("leg")) return "legs";
-    return dbMuscles.length > 4 ? "mixed" : "muscle";
+    // Exact PPL day names only — don't treat "Back + Biceps" as mixed/push/pull
+    if (sessionName === "Push Day" || (n === "push" || n.startsWith("push "))) return "push";
+    if (sessionName === "Pull Day" || (n === "pull" || n.startsWith("pull "))) return "pull";
+    if (sessionName === "Legs Day" || n.startsWith("leg")) return "legs";
+    return "muscle";
   };
 
   const generatePPLPlan = async () => {
