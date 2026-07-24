@@ -9,6 +9,7 @@ export const LOG_MUSCLE_OPTIONS: LogMuscleOption[] = [
   { key: "back", label: "Back", dbMuscles: ["lats", "mid_back", "lower_back"] },
   { key: "chest", label: "Chest", dbMuscles: ["chest"] },
   { key: "shoulders", label: "Shoulders", dbMuscles: ["front_deltoid", "side_deltoid", "rear_deltoid"] },
+  { key: "traps", label: "Traps", dbMuscles: ["traps"] },
   { key: "biceps", label: "Biceps", dbMuscles: ["biceps", "brachialis"] },
   { key: "triceps", label: "Triceps", dbMuscles: ["triceps"] },
   { key: "legs", label: "Legs", dbMuscles: ["quads", "hamstrings", "glutes", "calves"] },
