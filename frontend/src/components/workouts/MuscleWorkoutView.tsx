@@ -563,7 +563,7 @@ export function MuscleWorkoutView({
             <div className="flex items-center justify-between px-4 py-3 border-b">
               <div>
                 <p className="font-semibold">Exercise library</p>
-                <p className="text-xs text-muted-foreground">Browse any muscle — including traps</p>
+                <p className="text-xs text-muted-foreground">Browse any muscle group</p>
               </div>
               <Button variant="ghost" size="sm" onClick={() => setBrowseOpen(false)}>Close</Button>
             </div>

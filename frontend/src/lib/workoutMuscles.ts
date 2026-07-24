@@ -9,7 +9,6 @@ export const LOG_MUSCLE_OPTIONS: LogMuscleOption[] = [
   { key: "back", label: "Back", dbMuscles: ["lats", "mid_back", "lower_back"] },
   { key: "chest", label: "Chest", dbMuscles: ["chest"] },
   { key: "shoulders", label: "Shoulders", dbMuscles: ["front_deltoid", "side_deltoid", "rear_deltoid"] },
-  { key: "traps", label: "Traps", dbMuscles: ["traps"] },
   { key: "biceps", label: "Biceps", dbMuscles: ["biceps", "brachialis"] },
   { key: "triceps", label: "Triceps", dbMuscles: ["triceps"] },
   { key: "legs", label: "Legs", dbMuscles: ["quads", "hamstrings", "glutes", "calves"] },
@@ -34,8 +33,16 @@ export const MIXED_WORKOUT = {
   dbMuscles: LOG_MUSCLE_OPTIONS.flatMap((m) => m.dbMuscles),
 };
 
-/** Flat list of all DB primary_muscle values used across log/generate UIs. */
-export const ALL_DB_MUSCLES = [...new Set(LOG_MUSCLE_OPTIONS.flatMap((m) => m.dbMuscles))];
+/**
+ * Primary muscles available when adding/creating an exercise.
+ * Includes fine-grained targets (e.g. traps) that are not standalone generate categories.
+ */
+export const ALL_DB_MUSCLES = [
+  ...new Set([
+    ...LOG_MUSCLE_OPTIONS.flatMap((m) => m.dbMuscles),
+    "traps",
+  ]),
+];
 
 export const COMBO_WORKOUT = {
   key: "combo",
