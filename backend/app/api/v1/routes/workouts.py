@@ -17,6 +17,7 @@ Endpoints:
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
@@ -74,6 +75,12 @@ class CreateSessionRequest(BaseModel):
     planned_exercises: list[str] = []  # exercise IDs
 
 
+class CreateExerciseRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    primary_muscle: str = Field(min_length=1, max_length=50)
+    is_compound: bool = False
+
+
 class GeneratePlanRequest(BaseModel):
     plan_type: str = Field("ppl", description="ppl (Push/Pull/Legs), upper_lower, full_body")
     days_per_week: int = Field(5, ge=3, le=6)
@@ -90,13 +97,36 @@ async def _get_user(clerk_id: str, db: AsyncSession) -> User:
     return user
 
 
+def _slugify(name: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower().strip()).strip("-")
+    return slug[:200] or "exercise"
+
+
+def _exercise_to_dict(exercise: Exercise) -> dict:
+    return {
+        "id": str(exercise.id),
+        "name": exercise.name,
+        "slug": exercise.slug,
+        "type": exercise.exercise_type,
+        "primary_muscle": exercise.primary_muscle,
+        "secondary_muscles": exercise.secondary_muscles,
+        "equipment": exercise.equipment_needed,
+        "is_compound": exercise.is_compound,
+        "tags": exercise.tags,
+        "instructions": exercise.instructions,
+        "tips": exercise.tips,
+    }
+
+
 # ─── Exercise Library ────────────────────────────────────────────────────────
 
 @router.get("/exercises")
 async def search_exercises(
     query: str = "",
     muscle_group: str | None = None,
+    muscle_groups: str | None = Query(None, description="Comma-separated primary muscles"),
     tag: str | None = None,
+    limit: int = Query(60, le=100),
     current_user: TokenPayload = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[dict]:
@@ -106,29 +136,59 @@ async def search_exercises(
         stmt = stmt.where(Exercise.name.ilike(f"%{query}%"))
     if muscle_group:
         stmt = stmt.where(Exercise.primary_muscle == muscle_group)
+    if muscle_groups:
+        muscles = [m.strip() for m in muscle_groups.split(",") if m.strip()]
+        if muscles:
+            stmt = stmt.where(Exercise.primary_muscle.in_(muscles))
     if tag:
         stmt = stmt.where(Exercise.tags.any(tag))
-    stmt = stmt.order_by(Exercise.name).limit(60)
+    stmt = stmt.order_by(Exercise.name).limit(limit)
 
     result = await db.execute(stmt)
     exercises = result.scalars().all()
 
-    return [
-        {
-            "id": str(e.id),
-            "name": e.name,
-            "slug": e.slug,
-            "type": e.exercise_type,
-            "primary_muscle": e.primary_muscle,
-            "secondary_muscles": e.secondary_muscles,
-            "equipment": e.equipment_needed,
-            "is_compound": e.is_compound,
-            "tags": e.tags,
-            "instructions": e.instructions,
-            "tips": e.tips,
-        }
-        for e in exercises
-    ]
+    return [_exercise_to_dict(e) for e in exercises]
+
+
+@router.post("/exercises", status_code=status.HTTP_201_CREATED)
+async def create_exercise(
+    request: CreateExerciseRequest,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Create a custom exercise and add it to the library."""
+    name = request.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Exercise name is required")
+
+    existing_result = await db.execute(
+        select(Exercise).where(func.lower(Exercise.name) == name.lower())
+    )
+    existing = existing_result.scalar_one_or_none()
+    if existing:
+        return _exercise_to_dict(existing)
+
+    base_slug = _slugify(name)
+    slug = base_slug
+    slug_result = await db.execute(select(Exercise).where(Exercise.slug == slug))
+    if slug_result.scalar_one_or_none():
+        slug = f"{base_slug}-{uuid.uuid4().hex[:6]}"
+
+    exercise = Exercise(
+        name=name,
+        slug=slug,
+        exercise_type="strength",
+        primary_muscle=request.primary_muscle,
+        secondary_muscles=[],
+        equipment_needed=[],
+        is_compound=request.is_compound,
+        tags=["custom"],
+    )
+    db.add(exercise)
+    await db.flush()
+    await db.commit()
+
+    return _exercise_to_dict(exercise)
 
 
 @router.get("/exercises/{exercise_id}")

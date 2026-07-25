@@ -15,11 +15,12 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime, time
+from decimal import Decimal
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import desc, func, or_, select
+from sqlalchemy import and_, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import TokenPayload, get_current_user
@@ -82,6 +83,139 @@ def _macros_from_food(food: FoodItem, quantity_g: float) -> dict:
     }
 
 
+def _macros_to_per_100g(
+    quantity_g: float,
+    calories: float,
+    protein_g: float,
+    carbs_g: float,
+    fat_g: float,
+) -> dict[str, Decimal]:
+    factor = Decimal("100") / Decimal(str(quantity_g))
+    return {
+        "calories_per_100g": Decimal(str(round(calories * float(factor), 2))),
+        "protein_g": Decimal(str(round(protein_g * float(factor), 2))),
+        "carbs_g": Decimal(str(round(carbs_g * float(factor), 2))),
+        "fat_g": Decimal(str(round(fat_g * float(factor), 2))),
+    }
+
+
+def _food_to_search_dict(food: FoodItem, user_id: uuid.UUID) -> dict:
+    is_custom = bool(food.is_user_created and food.created_by_user_id == user_id)
+    return {
+        "id": str(food.id),
+        "name": food.name,
+        "is_vegetarian": food.is_vegetarian,
+        "is_vegan": food.is_vegan,
+        "is_custom": is_custom,
+        "calories_per_100g": float(food.calories_per_100g),
+        "protein_g": float(food.protein_g),
+        "carbs_g": float(food.carbs_g),
+        "fat_g": float(food.fat_g),
+        "fiber_g": float(food.fiber_g) if food.fiber_g else None,
+        "serving_size_g": float(food.serving_size_g) if food.serving_size_g else None,
+        "serving_description": food.serving_description,
+        "tags": food.tags,
+        "per_serving": {
+            "calories": round(float(food.calories_per_100g) * float(food.serving_size_g or 100) / 100, 1),
+            "protein_g": round(float(food.protein_g) * float(food.serving_size_g or 100) / 100, 1),
+        } if food.serving_size_g else None,
+    }
+
+
+async def _upsert_user_food(
+    user: User,
+    name: str,
+    quantity_g: float,
+    calories: float,
+    protein_g: float,
+    carbs_g: float,
+    fat_g: float,
+    db: AsyncSession,
+) -> FoodItem:
+    """Save or update a user-created food in the library (macros normalised per 100g)."""
+    clean_name = name.strip()
+    per_100g = _macros_to_per_100g(quantity_g, calories, protein_g, carbs_g, fat_g)
+
+    existing_result = await db.execute(
+        select(FoodItem).where(
+            FoodItem.is_user_created.is_(True),
+            FoodItem.created_by_user_id == user.id,
+            func.lower(FoodItem.name) == clean_name.lower(),
+        )
+    )
+    food = existing_result.scalar_one_or_none()
+
+    if food:
+        food.calories_per_100g = per_100g["calories_per_100g"]
+        food.protein_g = per_100g["protein_g"]
+        food.carbs_g = per_100g["carbs_g"]
+        food.fat_g = per_100g["fat_g"]
+        food.serving_size_g = Decimal(str(quantity_g))
+        food.serving_description = f"{quantity_g}g serving"
+        if "custom" not in (food.tags or []):
+            food.tags = list(food.tags or []) + ["custom"]
+    else:
+        food = FoodItem(
+            name=clean_name,
+            is_vegetarian=True,
+            is_vegan=False,
+            is_user_created=True,
+            created_by_user_id=user.id,
+            calories_per_100g=per_100g["calories_per_100g"],
+            protein_g=per_100g["protein_g"],
+            carbs_g=per_100g["carbs_g"],
+            fat_g=per_100g["fat_g"],
+            serving_size_g=Decimal(str(quantity_g)),
+            serving_description=f"{quantity_g}g serving",
+            tags=["custom"],
+        )
+        db.add(food)
+
+    await db.flush()
+    return food
+
+
+async def _backfill_orphaned_meal_items(user: User, db: AsyncSession) -> int:
+    """Create food_database entries for past manual meal items missing food_id."""
+    result = await db.execute(
+        select(MealItem)
+        .join(Meal, MealItem.meal_id == Meal.id)
+        .where(Meal.user_id == user.id, MealItem.food_id.is_(None))
+    )
+    items = result.scalars().all()
+    if not items:
+        return 0
+
+    name_to_food_id: dict[str, uuid.UUID] = {}
+    updated = 0
+
+    for item in items:
+        name_key = item.food_name.strip().lower()
+        qty = float(item.quantity_g)
+        if qty <= 0:
+            continue
+
+        if name_key not in name_to_food_id:
+            food = await _upsert_user_food(
+                user,
+                item.food_name,
+                qty,
+                float(item.calories or 0),
+                float(item.protein_g or 0),
+                float(item.carbs_g or 0),
+                float(item.fat_g or 0),
+                db,
+            )
+            name_to_food_id[name_key] = food.id
+
+        item.food_id = name_to_food_id[name_key]
+        updated += 1
+
+    if updated:
+        await db.commit()
+    return updated
+
+
 def _meal_to_dict(meal: Meal, items: list = []) -> dict:
     return {
         "id": str(meal.id),
@@ -133,50 +267,50 @@ async def _recalculate_meal_totals(meal: Meal, db: AsyncSession) -> None:
 async def search_foods(
     query: str = "",
     vegetarian_only: bool = True,
+    custom_only: bool = False,
     tag: str | None = None,
     limit: int = Query(20, le=50),
     current_user: TokenPayload = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[dict]:
     """
-    Search the Indian vegetarian food database.
-
-    Returns macros per 100g + per serving size.
+    Search the food database including the user's saved custom foods.
     """
+    user = await _get_user(current_user.sub, db)
+    await _backfill_orphaned_meal_items(user, db)
+
     stmt = select(FoodItem)
+
+    if custom_only:
+        stmt = stmt.where(
+            FoodItem.is_user_created.is_(True),
+            FoodItem.created_by_user_id == user.id,
+        )
+    elif vegetarian_only:
+        stmt = stmt.where(
+            or_(
+                and_(
+                    FoodItem.is_user_created.is_(True),
+                    FoodItem.created_by_user_id == user.id,
+                ),
+                FoodItem.is_vegetarian.is_(True),
+            )
+        )
+
     if query:
         stmt = stmt.where(FoodItem.name.ilike(f"%{query}%"))
-    if vegetarian_only:
-        stmt = stmt.where(FoodItem.is_vegetarian.is_(True))
     if tag:
         stmt = stmt.where(FoodItem.tags.any(tag))
-    stmt = stmt.order_by(FoodItem.name).limit(limit)
+
+    stmt = stmt.order_by(
+        FoodItem.is_user_created.desc(),
+        FoodItem.name,
+    ).limit(limit)
 
     result = await db.execute(stmt)
     foods = result.scalars().all()
 
-    return [
-        {
-            "id": str(f.id),
-            "name": f.name,
-            "is_vegetarian": f.is_vegetarian,
-            "is_vegan": f.is_vegan,
-            "calories_per_100g": float(f.calories_per_100g),
-            "protein_g": float(f.protein_g),
-            "carbs_g": float(f.carbs_g),
-            "fat_g": float(f.fat_g),
-            "fiber_g": float(f.fiber_g) if f.fiber_g else None,
-            "serving_size_g": float(f.serving_size_g) if f.serving_size_g else None,
-            "serving_description": f.serving_description,
-            "tags": f.tags,
-            # Pre-calculated per-serving macros
-            "per_serving": {
-                "calories": round(float(f.calories_per_100g) * float(f.serving_size_g or 100) / 100, 1),
-                "protein_g": round(float(f.protein_g) * float(f.serving_size_g or 100) / 100, 1),
-            } if f.serving_size_g else None,
-        }
-        for f in foods
-    ]
+    return [_food_to_search_dict(f, user.id) for f in foods]
 
 
 # ─── Today's Summary ──────────────────────────────────────────────────────────
@@ -362,6 +496,19 @@ async def add_food_item(
             carbs_g = macros["carbs_g"]
             fat_g = macros["fat_g"]
             food_db_id = food.id
+    elif calories is not None and protein_g is not None:
+        # Manual entry — persist to user's food library for future use
+        saved_food = await _upsert_user_food(
+            user,
+            request.food_name,
+            request.quantity_g,
+            calories,
+            protein_g,
+            carbs_g or 0,
+            fat_g or 0,
+            db,
+        )
+        food_db_id = saved_food.id
 
     item = MealItem(
         meal_id=meal.id,
@@ -390,6 +537,7 @@ async def add_food_item(
 
     return {
         "item_id": str(item.id),
+        "food_id": str(food_db_id) if food_db_id else None,
         "food_name": request.food_name,
         "quantity_g": request.quantity_g,
         "calories": calories,
@@ -445,6 +593,18 @@ async def quick_log_meal(
                 carbs_g = macros["carbs_g"]
                 fat_g = macros["fat_g"]
                 food_db_id = food.id
+        elif item_req.calories_override is not None and item_req.protein_override is not None:
+            saved_food = await _upsert_user_food(
+                user,
+                item_req.food_name,
+                item_req.quantity_g,
+                item_req.calories_override,
+                item_req.protein_override,
+                item_req.carbs_override or 0,
+                item_req.fat_override or 0,
+                db,
+            )
+            food_db_id = saved_food.id
 
         item = MealItem(
             meal_id=meal.id,

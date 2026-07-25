@@ -63,6 +63,7 @@ interface FoodResult {
   serving_description?: string;
   is_vegetarian: boolean;
   is_vegan: boolean;
+  is_custom?: boolean;
   tags: string[];
 }
 
@@ -143,8 +144,10 @@ function FoodSearchPanel({
 }) {
   const [mode, setMode] = useState<"search" | "manual">("search");
   const [query, setQuery] = useState("");
+  const [myFoods, setMyFoods] = useState<FoodResult[]>([]);
   const [results, setResults] = useState<FoodResult[]>([]);
   const [searching, setSearching] = useState(false);
+  const [loadingMyFoods, setLoadingMyFoods] = useState(true);
   const [selected, setSelected] = useState<FoodResult | null>(null);
   const [quantity, setQuantity] = useState("100");
   const [adding, setAdding] = useState(false);
@@ -159,6 +162,24 @@ function FoodSearchPanel({
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { inputRef.current?.focus(); }, [mode]);
+
+  const loadMyFoods = async () => {
+    setLoadingMyFoods(true);
+    try {
+      const res = await apiClient.get("/api/v1/nutrition/foods", {
+        params: { custom_only: true, limit: 50 },
+      });
+      setMyFoods(res.data);
+    } catch {
+      setMyFoods([]);
+    } finally {
+      setLoadingMyFoods(false);
+    }
+  };
+
+  useEffect(() => {
+    loadMyFoods();
+  }, []);
 
   const search = async (q: string) => {
     setQuery(q);
@@ -175,6 +196,11 @@ function FoodSearchPanel({
     } finally {
       setSearching(false);
     }
+  };
+
+  const selectFood = (f: FoodResult) => {
+    setSelected(f);
+    if (f.serving_size_g) setQuantity(f.serving_size_g.toString());
   };
 
   const openManual = (name?: string) => {
@@ -236,6 +262,7 @@ function FoodSearchPanel({
         fat_override: fat,
       });
       toast.success(`Added ${name} — ${res.data.protein_g}g protein`);
+      await loadMyFoods();
       onAdded();
       setMode("search");
       setManual({ name: "", quantity_g: "100", calories: "", protein_g: "", carbs_g: "", fat_g: "" });
@@ -359,21 +386,61 @@ function FoodSearchPanel({
               <Loader2 className="h-3.5 w-3.5 animate-spin" /> Searching...
             </div>
           )}
-          {!searching && results.length > 0 && (
+          {!searching && query.trim().length === 0 && !loadingMyFoods && myFoods.length > 0 && (
             <div className="space-y-1 max-h-60 overflow-y-auto">
-              {results.map((f) => (
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-1">
+                Your foods ({myFoods.length})
+              </p>
+              {myFoods.map((f) => (
                 <button
                   key={f.id}
-                  onClick={() => {
-                    setSelected(f);
-                    if (f.serving_size_g) setQuantity(f.serving_size_g.toString());
-                  }}
+                  onClick={() => selectFood(f)}
                   className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm hover:bg-muted/50 text-left"
                 >
                   <div>
-                    <span className="font-medium">{f.name}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{f.name}</span>
+                      <Badge variant="secondary" className="text-[9px]">Custom</Badge>
+                    </div>
+                    {f.serving_description && (
+                      <div className="text-[10px] text-muted-foreground mt-0.5">{f.serving_description}</div>
+                    )}
+                  </div>
+                  <div className="text-right text-[11px] text-muted-foreground">
+                    <div className="font-bold text-foreground">{f.protein_g}g protein</div>
+                    <div>{Math.round(f.calories_per_100g)} kcal / 100g</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+          {loadingMyFoods && query.trim().length === 0 && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading your foods...
+            </div>
+          )}
+          {!searching && results.length > 0 && (
+            <div className="space-y-1 max-h-60 overflow-y-auto">
+              {query.trim().length > 0 && (
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-1">
+                  Search results
+                </p>
+              )}
+              {results.map((f) => (
+                <button
+                  key={f.id}
+                  onClick={() => selectFood(f)}
+                  className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm hover:bg-muted/50 text-left"
+                >
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{f.name}</span>
+                      {f.is_custom && (
+                        <Badge variant="secondary" className="text-[9px]">Custom</Badge>
+                      )}
+                    </div>
                     <div className="flex gap-2 text-[10px] text-muted-foreground mt-0.5">
-                      {f.tags.slice(0, 2).map((t) => <span key={t}>{t}</span>)}
+                      {f.tags.filter((t) => t !== "custom").slice(0, 2).map((t) => <span key={t}>{t}</span>)}
                     </div>
                   </div>
                   <div className="text-right text-[11px] text-muted-foreground">
