@@ -77,8 +77,9 @@ export default function ProfilePage() {
       toast.success(`Weight logged for ${selectedDate}`);
       setWeightInput("");
       await loadData();
-    } catch {
-      toast.error("Failed to log weight.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to log weight.";
+      toast.error(msg);
     } finally {
       setLoggingWeight(false);
     }

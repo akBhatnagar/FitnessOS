@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.dates import today_in_timezone
 from app.core.security import TokenPayload, get_current_user
 from app.db.models.measurement import Measurement
 from app.db.models.user import User, UserPreferences
@@ -60,7 +61,7 @@ async def log_measurement(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    if request.measured_on > date.today():
+    if request.measured_on > today_in_timezone(user.timezone):
         raise HTTPException(status_code=400, detail="Cannot log measurements for future dates")
 
     existing_result = await db.execute(
@@ -82,7 +83,7 @@ async def log_measurement(
         )
         db.add(measurement)
 
-    if request.weight_kg and request.measured_on == date.today():
+    if request.weight_kg and request.measured_on == today_in_timezone(user.timezone):
         prefs_result = await db.execute(
             select(UserPreferences).where(UserPreferences.user_id == user.id)
         )
