@@ -234,15 +234,17 @@ async def _build_session_plan_entries(
         try:
             entries = await asyncio.wait_for(
                 generate_ai_muscle_plan(
+                    db=db,
+                    user=user,
                     session_name=session_name,
                     muscle_groups=muscle_groups or [],
                     ctx=ctx,
                     all_exercises=all_exercises,
                     exclude_exercise_ids=exclude,
                     target_exercises=target,
-                    alternatives_per_exercise=2,
+                    alternatives_per_exercise=3,
                 ),
-                timeout=25.0,
+                timeout=45.0,
             )
         except Exception as exc:
             logger.warning("AI plan unavailable, using rule engine", error=str(exc))

@@ -510,6 +510,9 @@ export function WorkoutPlanEditor({
                         onClick={() => swapExercise(ex.exercise_id, alt)}
                       >
                         <div className="font-medium">{alt.name}</div>
+                        {"swap_reason" in alt && alt.swap_reason && (
+                          <div className="text-[11px] text-muted-foreground italic">{alt.swap_reason}</div>
+                        )}
                         {alt.prescription && (
                           <div className="text-[11px] text-muted-foreground">
                             {alt.prescription.sets} sets × {alt.prescription.reps_min}
