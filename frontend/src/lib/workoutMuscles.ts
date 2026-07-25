@@ -33,6 +33,17 @@ export const MIXED_WORKOUT = {
   dbMuscles: LOG_MUSCLE_OPTIONS.flatMap((m) => m.dbMuscles),
 };
 
+/**
+ * Primary muscles available when adding/creating an exercise.
+ * Includes fine-grained targets (e.g. traps) that are not standalone generate categories.
+ */
+export const ALL_DB_MUSCLES = [
+  ...new Set([
+    ...LOG_MUSCLE_OPTIONS.flatMap((m) => m.dbMuscles),
+    "traps",
+  ]),
+];
+
 export const COMBO_WORKOUT = {
   key: "combo",
   label: "Two Muscles",

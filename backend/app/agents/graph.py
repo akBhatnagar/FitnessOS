@@ -22,8 +22,7 @@ Pipeline execution order:
 
 from __future__ import annotations
 
-from functools import partial
-from typing import Any, Literal
+from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -146,6 +145,44 @@ def build_agent_graph(db: AsyncSession) -> StateGraph:
     return graph.compile()
 
 
+NODE_STATUS_MESSAGES: dict[str, str] = {
+    "memory_load": "Reviewing your history…",
+    "knowledge_retrieve": "Researching relevant knowledge…",
+    "coach_route": "Understanding your request…",
+    "workout_agent": "Working on your training…",
+    "nutrition_agent": "Analyzing nutrition…",
+    "swimming_agent": "Planning swim guidance…",
+    "analytics_agent": "Looking at your progress…",
+    "scheduler_agent": "Checking your schedule…",
+    "event_agent": "Considering upcoming events…",
+    "reflection_agent": "Reflecting on your week…",
+    "synthesize": "Putting it all together…",
+    "memory_store": "Saving insights…",
+}
+
+
+def _initial_agent_state(
+    user_message: str,
+    user_id: str,
+    session_id: str,
+    request_id: str | None = None,
+) -> AgentState:
+    import uuid
+    from datetime import date
+
+    return {
+        "user_id": user_id,
+        "session_id": session_id,
+        "request_id": request_id or str(uuid.uuid4()),
+        "user_message": user_message,
+        "current_date": date.today().isoformat(),
+        "messages": [],
+        "conversation_history": [],
+        "agent_trace": [],
+        "error": None,
+    }
+
+
 async def run_agent_pipeline(
     user_message: str,
     user_id: str,
@@ -158,20 +195,7 @@ async def run_agent_pipeline(
 
     This is the main entry point called by the API route.
     """
-    import uuid
-    from datetime import date
-
-    initial_state: AgentState = {
-        "user_id": user_id,
-        "session_id": session_id,
-        "request_id": request_id or str(uuid.uuid4()),
-        "user_message": user_message,
-        "current_date": date.today().isoformat(),
-        "messages": [],
-        "conversation_history": [],
-        "agent_trace": [],
-        "error": None,
-    }
+    initial_state = _initial_agent_state(user_message, user_id, session_id, request_id)
 
     logger.info(
         "Starting agent pipeline",
@@ -196,3 +220,89 @@ async def run_agent_pipeline(
             "I encountered an issue processing your request. Please try again."
         )
         return initial_state
+
+
+async def stream_agent_pipeline(
+    user_message: str,
+    user_id: str,
+    session_id: str,
+    db: AsyncSession,
+    request_id: str | None = None,
+):
+    """
+    Stream pipeline progress as each graph node finishes.
+
+    Yields dict events:
+      - {"type": "status", "node": str, "message": str}
+      - {"type": "heartbeat"}
+      - {"type": "done", "state": AgentState}
+      - {"type": "error", "message": str, "state": AgentState}
+    """
+    import asyncio
+
+    initial_state = _initial_agent_state(user_message, user_id, session_id, request_id)
+    logger.info(
+        "Starting streaming agent pipeline",
+        user_id=user_id,
+        session_id=session_id,
+        message_length=len(user_message),
+    )
+
+    graph = build_agent_graph(db)
+    queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+
+    async def _run() -> None:
+        final_state: AgentState = initial_state
+        try:
+            async for mode, chunk in graph.astream(
+                initial_state,
+                stream_mode=["updates", "values"],
+            ):
+                if mode == "updates" and isinstance(chunk, dict):
+                    for node_name in chunk:
+                        await queue.put(
+                            {
+                                "type": "status",
+                                "node": node_name,
+                                "message": NODE_STATUS_MESSAGES.get(
+                                    node_name, "Working on it…"
+                                ),
+                            }
+                        )
+                elif mode == "values" and isinstance(chunk, dict):
+                    final_state = chunk  # type: ignore[assignment]
+            await queue.put({"type": "done", "state": final_state})
+        except Exception as exc:
+            logger.error("Streaming agent pipeline failed", error=str(exc), user_id=user_id)
+            initial_state["error"] = str(exc)
+            initial_state["final_response"] = (
+                "I encountered an issue processing your request. Please try again."
+            )
+            await queue.put(
+                {
+                    "type": "error",
+                    "message": str(exc),
+                    "state": initial_state,
+                }
+            )
+        finally:
+            await queue.put(None)
+
+    task = asyncio.create_task(_run())
+    try:
+        while True:
+            try:
+                item = await asyncio.wait_for(queue.get(), timeout=12.0)
+            except asyncio.TimeoutError:
+                yield {"type": "heartbeat"}
+                continue
+            if item is None:
+                break
+            yield item
+    finally:
+        if not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass

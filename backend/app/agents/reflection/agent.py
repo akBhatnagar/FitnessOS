@@ -131,9 +131,9 @@ Be specific, never generic. Reference the actual numbers from the data.
         meas_result = await self.db.execute(
             select(Measurement).where(
                 Measurement.user_id == uid,
-                Measurement.measurement_date >= week_start,
-                Measurement.measurement_date <= week_end,
-            ).order_by(Measurement.measurement_date)
+                Measurement.measured_on >= week_start,
+                Measurement.measured_on <= week_end,
+            ).order_by(Measurement.measured_on)
         )
         measurements = meas_result.scalars().all()
         weight_start = float(measurements[0].weight_kg) if measurements else None

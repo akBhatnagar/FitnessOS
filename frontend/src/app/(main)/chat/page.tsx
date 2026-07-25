@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { Send, Loader2, Bot, User, Sparkles, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import ReactMarkdown from "react-markdown";
-import { apiClient } from "@/services/api";
+import { streamChatMessage } from "@/services/chatStream";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 
@@ -27,18 +27,40 @@ const CONVERSATION_STARTERS = [
   { emoji: "😴", text: "Help me fix my sleep schedule" },
 ];
 
+const FALLBACK_STATUS = [
+  "Working on it…",
+  "Researching…",
+  "Still thinking…",
+  "Almost there…",
+];
+
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [sessionId] = useState(() => crypto.randomUUID());
+  const [statusMessage, setStatusMessage] = useState("Working on it…");
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const statusIdxRef = useRef(0);
 
   const sendMessage = useMutation({
     mutationFn: (message: string) =>
-      apiClient
-        .post("/api/v1/chat/message", { message, session_id: sessionId })
-        .then((r) => r.data),
+      streamChatMessage(message, sessionId, {
+        onStatus: (msg) => {
+          statusIdxRef.current = 0;
+          setStatusMessage(msg);
+        },
+        onHeartbeat: () => {
+          statusIdxRef.current = (statusIdxRef.current + 1) % FALLBACK_STATUS.length;
+          setStatusMessage((prev) => {
+            // Keep the last real status if we have one; rotate fallback otherwise
+            if (prev && !FALLBACK_STATUS.includes(prev)) {
+              return prev;
+            }
+            return FALLBACK_STATUS[statusIdxRef.current];
+          });
+        },
+      }),
     onMutate: (message) => {
       const userMsg: Message = {
         id: crypto.randomUUID(),
@@ -48,12 +70,14 @@ export default function ChatPage() {
       };
       setMessages((prev) => [...prev, userMsg]);
       setInput("");
+      setStatusMessage("Working on it…");
+      statusIdxRef.current = 0;
     },
     onSuccess: (data) => {
       const assistantMsg: Message = {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: data.response,
+        content: data.response || "I couldn't generate a response. Please try again.",
         timestamp: new Date(),
         followUpSuggestions: data.follow_up_suggestions,
       };
@@ -74,7 +98,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, sendMessage.isPending]);
+  }, [messages, sendMessage.isPending, statusMessage]);
 
   const handleSend = useCallback(() => {
     if (input.trim() && !sendMessage.isPending) {
@@ -167,7 +191,6 @@ export default function ChatPage() {
                   {format(msg.timestamp, "h:mm a")}
                 </p>
 
-                {/* Follow-up suggestions */}
                 {msg.followUpSuggestions && msg.followUpSuggestions.length > 0 && (
                   <div className="flex flex-wrap gap-2 mt-2">
                     {msg.followUpSuggestions.map((suggestion) => (
@@ -195,7 +218,9 @@ export default function ChatPage() {
             <div className="bg-muted rounded-2xl rounded-tl-sm px-4 py-3">
               <div className="flex items-center gap-2">
                 <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">Thinking...</span>
+                <span className="text-sm text-muted-foreground animate-pulse">
+                  {statusMessage}
+                </span>
               </div>
             </div>
           </div>
