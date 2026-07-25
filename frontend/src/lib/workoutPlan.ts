@@ -17,6 +17,7 @@ export interface PlanAlternative {
   weight_irrelevant?: boolean;
   load_display?: "bodyweight" | "per_hand" | "total" | string;
   load_label?: string;
+  swap_reason?: string;
   prescription?: {
     sets: number;
     reps_min: number;
