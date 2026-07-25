@@ -6,7 +6,7 @@ import { Send, Loader2, Bot, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import ReactMarkdown from "react-markdown";
-import { apiClient } from "@/services/api";
+import { streamChatMessage } from "@/services/chatStream";
 import { cn } from "@/lib/utils";
 
 interface Message {
@@ -33,19 +33,21 @@ export function QuickChat() {
   ]);
   const [input, setInput] = useState("");
   const [sessionId] = useState(() => crypto.randomUUID());
+  const [statusMessage, setStatusMessage] = useState("Working on it…");
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const sendMessage = useMutation({
     mutationFn: (message: string) =>
-      apiClient
-        .post("/api/v1/chat/message", { message, session_id: sessionId })
-        .then((r) => r.data),
+      streamChatMessage(message, sessionId, {
+        onStatus: (msg) => setStatusMessage(msg),
+      }),
     onMutate: (message) => {
       setMessages((prev) => [
         ...prev,
         { id: crypto.randomUUID(), role: "user", content: message },
       ]);
       setInput("");
+      setStatusMessage("Working on it…");
     },
     onSuccess: (data) => {
       setMessages((prev) => [
@@ -67,7 +69,7 @@ export function QuickChat() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, statusMessage]);
 
   const handleSend = () => {
     if (input.trim() && !sendMessage.isPending) {
@@ -127,8 +129,9 @@ export function QuickChat() {
             <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted mt-0.5">
               <Bot className="h-3 w-3 text-muted-foreground" />
             </div>
-            <div className="bg-muted rounded-xl px-3 py-2">
+            <div className="bg-muted rounded-xl px-3 py-2 flex items-center gap-2">
               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">{statusMessage}</span>
             </div>
           </div>
         )}

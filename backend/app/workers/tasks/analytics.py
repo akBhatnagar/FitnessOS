@@ -39,9 +39,9 @@ def update_predictions(self) -> dict:
                     meas_result = await db.execute(
                         select(Measurement).where(
                             Measurement.user_id == user.id,
-                            Measurement.measurement_date >= today - timedelta(days=28),
+                            Measurement.measured_on >= today - timedelta(days=28),
                             Measurement.weight_kg.is_not(None),
-                        ).order_by(Measurement.measurement_date)
+                        ).order_by(Measurement.measured_on)
                     )
                     measurements = meas_result.scalars().all()
 
@@ -50,7 +50,7 @@ def update_predictions(self) -> dict:
 
                     # Simple linear regression on weight
                     weights = [float(m.weight_kg) for m in measurements]
-                    days = [(m.measurement_date - measurements[0].measurement_date).days for m in measurements]
+                    days = [(m.measured_on - measurements[0].measured_on).days for m in measurements]
 
                     n = len(weights)
                     mean_days = sum(days) / n

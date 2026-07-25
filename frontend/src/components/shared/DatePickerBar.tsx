@@ -5,8 +5,11 @@ import { ChevronLeft, ChevronRight, CalendarDays } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+/** App default timezone — matches backend user default (Asia/Kolkata). */
+export const APP_TIMEZONE = "Asia/Kolkata";
+
 function todayStr() {
-  return format(new Date(), "yyyy-MM-dd");
+  return new Date().toLocaleDateString("en-CA", { timeZone: APP_TIMEZONE });
 }
 
 interface DatePickerBarProps {

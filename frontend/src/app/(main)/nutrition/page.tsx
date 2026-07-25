@@ -87,6 +87,14 @@ const MEAL_TYPES = [
 
 // ─── Macro Ring ─────────────────────────────────────────────────────────────
 
+function formatRemaining(value: number, target: number, unit: string) {
+  const delta = Math.round(target) - Math.round(value);
+  const unitSuffix = unit === "kcal" ? " kcal" : unit;
+  if (delta > 0) return { text: `${delta}${unitSuffix} left`, over: false };
+  if (delta < 0) return { text: `${Math.abs(delta)}${unitSuffix} over`, over: true };
+  return { text: "On target", over: false };
+}
+
 function MacroRing({
   value,
   target,
@@ -100,10 +108,11 @@ function MacroRing({
   color: string;
   unit?: string;
 }) {
-  const pct = Math.min(100, (value / target) * 100);
+  const pct = Math.min(100, target > 0 ? (value / target) * 100 : 0);
   const r = 28;
   const circ = 2 * Math.PI * r;
   const dash = (pct / 100) * circ;
+  const remaining = formatRemaining(value, target, unit);
 
   return (
     <div className="flex flex-col items-center gap-1">
@@ -126,7 +135,42 @@ function MacroRing({
         </div>
       </div>
       <span className="text-[10px] text-muted-foreground font-medium">{label}</span>
-      <span className="text-[10px] text-muted-foreground">{Math.round(target) - Math.round(value)}{unit} left</span>
+      <span
+        className={
+          remaining.over
+            ? "text-[10px] font-medium text-amber-500"
+            : "text-[10px] text-muted-foreground"
+        }
+      >
+        {remaining.text}
+      </span>
+    </div>
+  );
+}
+
+function RemainingCell({
+  value,
+  target,
+  label,
+  unit,
+  colorClass,
+}: {
+  value: number;
+  target: number;
+  label: string;
+  unit: string;
+  colorClass: string;
+}) {
+  const remaining = formatRemaining(value, target, unit);
+  const amount = Math.abs(Math.round(target) - Math.round(value));
+  return (
+    <div>
+      <div className={`font-bold ${remaining.over ? "text-amber-500" : colorClass}`}>
+        {unit === "kcal" ? amount : `${amount}g`}
+      </div>
+      <div className="text-muted-foreground">
+        {remaining.over ? `${label} over` : `${label} left`}
+      </div>
     </div>
   );
 }
@@ -242,8 +286,12 @@ function FoodSearchPanel({
     const carbs = parseFloat(manual.carbs_g || "0");
     const fat = parseFloat(manual.fat_g || "0");
 
-    if (!name || !qty || qty <= 0) {
-      toast.error("Enter a food name and quantity.");
+    if (!name) {
+      toast.error("Enter a food name.");
+      return;
+    }
+    if (!qty || qty < 1) {
+      toast.error("Enter portion weight in grams (e.g. 150 for half a sandwich), not servings.");
       return;
     }
     if (Number.isNaN(calories) || Number.isNaN(protein)) {
@@ -268,8 +316,9 @@ function FoodSearchPanel({
       setManual({ name: "", quantity_g: "100", calories: "", protein_g: "", carbs_g: "", fat_g: "" });
       setQuery("");
       setResults([]);
-    } catch {
-      toast.error("Failed to add custom food.");
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : "";
+      toast.error(detail || "Failed to add custom food.");
     } finally {
       setAdding(false);
     }
@@ -306,11 +355,14 @@ function FoodSearchPanel({
             />
           </div>
           <div>
-            <label className="text-xs text-muted-foreground">Quantity (grams)</label>
+            <label className="text-xs text-muted-foreground">Portion weight (grams)</label>
             <Input
               type="number"
+              min={1}
+              step={1}
               value={manual.quantity_g}
               onChange={(e) => setManual({ ...manual, quantity_g: e.target.value })}
+              placeholder="e.g. 150"
               className="mt-1"
             />
           </div>
@@ -357,7 +409,8 @@ function FoodSearchPanel({
             </div>
           </div>
           <p className="text-[11px] text-muted-foreground">
-            Use the label, MyFitnessPal, or a rough estimate. Calories and protein are required.
+            Enter macros for this portion weight (not per 100g). Example: half sandwich ≈ 120–180g,
+            450 kcal, 15g protein.
           </p>
           <div className="flex gap-2">
             <Button onClick={addManualFood} disabled={adding} className="flex-1">
@@ -672,8 +725,13 @@ export default function NutritionPage() {
     try {
       const res = await apiClient.get("/api/v1/nutrition/today", { params: { date } });
       setData(res.data);
-    } catch {
-      toast.error("Failed to load nutrition data.");
+    } catch (err) {
+      // Empty day is a valid state — keep zeros/empty meals, only toast real failures
+      setData((prev) => prev);
+      const detail = err instanceof Error ? err.message : "";
+      if (detail && !/future/i.test(detail)) {
+        toast.error(detail);
+      }
     } finally {
       setLoading(false);
     }
@@ -717,11 +775,9 @@ export default function NutritionPage() {
     );
   }
 
-  const { totals, targets, remaining, scores, meals, insight } = data ?? {
+  const { totals, targets, meals, insight } = data ?? {
     totals: { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 },
     targets: { calories: 2200, protein_g: 160, carbs_g: 220, fat_g: 70 },
-    remaining: { calories: 2200, protein_g: 160, carbs_g: 220, fat_g: 70 },
-    scores: { protein_pct: 0, calorie_pct: 0 },
     meals: [],
     insight: "",
   };
@@ -759,22 +815,34 @@ export default function NutritionPage() {
 
           {/* Summary row */}
           <div className="grid grid-cols-4 gap-2 mt-4 pt-4 border-t text-center text-xs">
-            <div>
-              <div className="font-bold text-orange-400">{Math.round(remaining.calories)}</div>
-              <div className="text-muted-foreground">kcal left</div>
-            </div>
-            <div>
-              <div className="font-bold text-red-400">{Math.round(remaining.protein_g)}g</div>
-              <div className="text-muted-foreground">protein left</div>
-            </div>
-            <div>
-              <div className="font-bold text-yellow-400">{Math.round(remaining.carbs_g)}g</div>
-              <div className="text-muted-foreground">carbs left</div>
-            </div>
-            <div>
-              <div className="font-bold text-blue-400">{Math.round(remaining.fat_g)}g</div>
-              <div className="text-muted-foreground">fat left</div>
-            </div>
+            <RemainingCell
+              value={totals.calories}
+              target={targets.calories}
+              label="kcal"
+              unit="kcal"
+              colorClass="text-orange-400"
+            />
+            <RemainingCell
+              value={totals.protein_g}
+              target={targets.protein_g}
+              label="protein"
+              unit="g"
+              colorClass="text-red-400"
+            />
+            <RemainingCell
+              value={totals.carbs_g}
+              target={targets.carbs_g}
+              label="carbs"
+              unit="g"
+              colorClass="text-yellow-400"
+            />
+            <RemainingCell
+              value={totals.fat_g}
+              target={targets.fat_g}
+              label="fat"
+              unit="g"
+              colorClass="text-blue-400"
+            />
           </div>
         </CardContent>
       </Card>

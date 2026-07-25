@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import and_, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.dates import today_in_timezone
 from app.core.security import TokenPayload, get_current_user
 from app.db.models.user import User, UserPreferences
 from app.db.models.nutrition import Food as FoodItem, Meal, MealItem
@@ -38,7 +39,7 @@ logger = get_logger("api.nutrition")
 class LogMealRequest(BaseModel):
     meal_type: str = Field(description="breakfast, lunch, dinner, snack, pre_workout, post_workout")
     name: Optional[str] = Field(None, max_length=255)
-    meal_date: date = Field(default_factory=date.today)
+    meal_date: Optional[date] = Field(None, description="YYYY-MM-DD, defaults to today (user timezone)")
     meal_time: Optional[str] = Field(None, description="HH:MM format")
     notes: Optional[str] = None
     restaurant_name: Optional[str] = None
@@ -58,7 +59,7 @@ class AddFoodItemRequest(BaseModel):
 class QuickLogRequest(BaseModel):
     """Log a complete meal with items in one shot."""
     meal_type: str
-    meal_date: date = Field(default_factory=date.today)
+    meal_date: Optional[date] = Field(None, description="YYYY-MM-DD, defaults to today (user timezone)")
     name: Optional[str] = None
     items: list[AddFoodItemRequest] = []
 
@@ -71,6 +72,21 @@ async def _get_user(clerk_id: str, db: AsyncSession) -> User:
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user
+
+
+def _user_today(user: User) -> date:
+    return today_in_timezone(getattr(user, "timezone", None))
+
+
+def _per_100g_fits_columns(per_100g: dict[str, Decimal]) -> bool:
+    """Food table Numeric limits: calories(7,2), macros(6,2)."""
+    limits = {
+        "calories_per_100g": Decimal("99999.99"),
+        "protein_g": Decimal("9999.99"),
+        "carbs_g": Decimal("9999.99"),
+        "fat_g": Decimal("9999.99"),
+    }
+    return all(per_100g[key] <= limits[key] for key in limits)
 
 
 def _macros_from_food(food: FoodItem, quantity_g: float) -> dict:
@@ -131,10 +147,25 @@ async def _upsert_user_food(
     carbs_g: float,
     fat_g: float,
     db: AsyncSession,
-) -> FoodItem:
-    """Save or update a user-created food in the library (macros normalised per 100g)."""
+) -> FoodItem | None:
+    """
+    Save or update a user-created food in the library (macros normalised per 100g).
+
+    Returns None when the portion weight is too small relative to the macros
+    (would overflow DB numeric columns) — the meal item can still be logged.
+    """
     clean_name = name.strip()
+    if quantity_g <= 0:
+        return None
+
     per_100g = _macros_to_per_100g(quantity_g, calories, protein_g, carbs_g, fat_g)
+    if not _per_100g_fits_columns(per_100g):
+        logger.warning(
+            "Skipping custom food library save — portion too small for macros",
+            food=clean_name,
+            quantity_g=quantity_g,
+        )
+        return None
 
     existing_result = await db.execute(
         select(FoodItem).where(
@@ -206,6 +237,8 @@ async def _backfill_orphaned_meal_items(user: User, db: AsyncSession) -> int:
                 float(item.fat_g or 0),
                 db,
             )
+            if not food:
+                continue
             name_to_food_id[name_key] = food.id
 
         item.food_id = name_to_food_id[name_key]
@@ -326,8 +359,9 @@ async def get_today_summary(
     Pass ?date=YYYY-MM-DD to view or log for a previous day.
     """
     user = await _get_user(current_user.sub, db)
-    target_date = date_param or date.today()
-    if target_date > date.today():
+    today = _user_today(user)
+    target_date = date_param or today
+    if target_date > today:
         raise HTTPException(status_code=400, detail="Cannot view future dates")
 
     # Get user's targets
@@ -425,8 +459,10 @@ async def log_meal(
 ) -> dict:
     """Create an empty meal container. Add food items with /meals/:id/items."""
     user = await _get_user(current_user.sub, db)
+    today = _user_today(user)
+    meal_date = request.meal_date or today
 
-    if request.meal_date > date.today():
+    if meal_date > today:
         raise HTTPException(status_code=400, detail="Cannot log meals for future dates")
 
     meal_time = None
@@ -438,7 +474,7 @@ async def log_meal(
         user_id=user.id,
         meal_type=request.meal_type,
         name=request.name or request.meal_type.replace("_", " ").title(),
-        meal_date=request.meal_date,
+        meal_date=meal_date,
         meal_time=meal_time,
         notes=request.notes,
         restaurant_name=request.restaurant_name,
@@ -497,7 +533,7 @@ async def add_food_item(
             fat_g = macros["fat_g"]
             food_db_id = food.id
     elif calories is not None and protein_g is not None:
-        # Manual entry — persist to user's food library for future use
+        # Manual entry — persist to user's food library when values fit
         saved_food = await _upsert_user_food(
             user,
             request.food_name,
@@ -508,7 +544,13 @@ async def add_food_item(
             fat_g or 0,
             db,
         )
-        food_db_id = saved_food.id
+        food_db_id = saved_food.id if saved_food else None
+
+    if calories is None or protein_g is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Calories and protein are required when adding a custom food.",
+        )
 
     item = MealItem(
         meal_id=meal.id,
@@ -560,12 +602,16 @@ async def quick_log_meal(
     Useful for logging a known meal (e.g., 'lunch — dal + rice + paneer').
     """
     user = await _get_user(current_user.sub, db)
+    today = _user_today(user)
+    meal_date = request.meal_date or today
+    if meal_date > today:
+        raise HTTPException(status_code=400, detail="Cannot log meals for future dates")
 
     meal = Meal(
         user_id=user.id,
         meal_type=request.meal_type,
         name=request.name or request.meal_type.replace("_", " ").title(),
-        meal_date=request.meal_date,
+        meal_date=meal_date,
         total_calories=0,
         total_protein_g=0,
         total_carbs_g=0,
@@ -604,7 +650,7 @@ async def quick_log_meal(
                 item_req.fat_override or 0,
                 db,
             )
-            food_db_id = saved_food.id
+            food_db_id = saved_food.id if saved_food else None
 
         item = MealItem(
             meal_id=meal.id,
