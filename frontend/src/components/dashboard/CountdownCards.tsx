@@ -1,6 +1,6 @@
 "use client";
 
-import { differenceInDays, parseISO } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { Camera, Heart, TrendingDown } from "lucide-react";
 
 interface Countdown {
@@ -16,8 +16,8 @@ interface Prediction {
 
 interface CountdownCardsProps {
   countdowns?: {
-    pre_wedding?: Countdown;
-    wedding?: Countdown;
+    pre_wedding?: Countdown | null;
+    wedding?: Countdown | null;
   };
   prediction?: Prediction | null;
 }
@@ -30,25 +30,23 @@ export function CountdownCards({ countdowns, prediction }: CountdownCardsProps) 
     <div className="space-y-4">
       {preWedding && (
         <CountdownCard
-          title="Pre-Wedding Shoot"
+          title={preWedding.title || "Pre-Wedding Shoot"}
           days={preWedding.days_remaining}
-          subtitle="Oct 20, 2026 · Peak Definition"
+          subtitle={`${format(parseISO(preWedding.date), "MMM d, yyyy")} · Peak Definition`}
           icon={Camera}
           colorClass="border-amber-500/30 bg-amber-500/5"
           textClass="text-amber-500"
-          urgency={preWedding.days_remaining <= 60 ? "high" : "medium"}
         />
       )}
 
       {wedding && (
         <CountdownCard
-          title="Wedding Day"
+          title={wedding.title || "Wedding Day"}
           days={wedding.days_remaining}
-          subtitle="Jan 30, 2027 · Best Physique"
+          subtitle={`${format(parseISO(wedding.date), "MMM d, yyyy")} · Best Physique`}
           icon={Heart}
           colorClass="border-red-500/30 bg-red-500/5"
           textClass="text-red-500"
-          urgency={wedding.days_remaining <= 90 ? "high" : "medium"}
         />
       )}
 
@@ -83,7 +81,6 @@ function CountdownCard({
   icon: Icon,
   colorClass,
   textClass,
-  urgency,
 }: {
   title: string;
   days: number;
@@ -91,7 +88,6 @@ function CountdownCard({
   icon: React.ComponentType<{ className?: string }>;
   colorClass: string;
   textClass: string;
-  urgency: "high" | "medium" | "low";
 }) {
   return (
     <div className={`rounded-xl border p-4 ${colorClass}`}>
@@ -109,7 +105,6 @@ function CountdownCard({
         </div>
       </div>
 
-      {/* Progress bar */}
       <div className="mt-3">
         <div className="h-1 bg-muted rounded-full overflow-hidden">
           <div

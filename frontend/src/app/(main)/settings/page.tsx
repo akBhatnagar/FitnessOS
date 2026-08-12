@@ -1,12 +1,31 @@
 "use client";
 
+import { useCallback, useEffect, useState } from "react";
+import { format, parseISO } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import {
-  Settings, User, Bell, Shield, Brain, Database,
-  Server, Zap, Clock, Scale, Target,
+  User, Bell, Shield, Brain, Server, Zap, Clock, Scale, Target, Loader2, Pencil, Check, X,
 } from "lucide-react";
+import { apiClient } from "@/services/api";
+import { toast } from "sonner";
+import { todayStr } from "@/components/shared/DatePickerBar";
+
+interface AppEvent {
+  id: string;
+  title: string;
+  description?: string | null;
+  event_type: string;
+  event_date: string;
+  location?: string | null;
+  peak_priority: string;
+  days_remaining: number;
+  is_critical: boolean;
+  is_upcoming: boolean;
+}
 
 const PROFILE = [
   { label: "Name", value: "Demo User" },
@@ -26,19 +45,6 @@ const SCHEDULE_INFO = [
   { label: "Target wake", value: "7:00 AM" },
 ];
 
-const EVENTS = [
-  { label: "Pre-Wedding Shoot", date: "October 20, 2026", color: "bg-amber-500/10 text-amber-500" },
-  { label: "Wedding Day", date: "January 30, 2027", color: "bg-red-500/10 text-red-500" },
-];
-
-const PREFERENCES = [
-  { label: "No tofu", value: true },
-  { label: "No soya chunks", value: true },
-  { label: "No creatine", value: true },
-  { label: "Whey protein", value: true },
-  { label: "Protein bars", value: true },
-];
-
 const TECH_INFO = [
   { label: "AI Provider", value: "OpenAI (GPT-4o-mini)" },
   { label: "Memory", value: "PostgreSQL + pgvector" },
@@ -48,10 +54,76 @@ const TECH_INFO = [
   { label: "Frontend", value: "Next.js 15 + shadcn/ui" },
 ];
 
+function eventAccent(eventType: string): string {
+  const t = eventType.toLowerCase();
+  if (t.includes("wedding") && !t.includes("pre")) return "bg-red-500/10 text-red-500";
+  if (t.includes("photo") || t.includes("pre")) return "bg-amber-500/10 text-amber-500";
+  return "bg-primary/10 text-primary";
+}
+
 export default function SettingsPage() {
+  const [events, setEvents] = useState<AppEvent[]>([]);
+  const [loadingEvents, setLoadingEvents] = useState(true);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draftDate, setDraftDate] = useState("");
+  const [savingId, setSavingId] = useState<string | null>(null);
+
+  const loadEvents = useCallback(async () => {
+    try {
+      const res = await apiClient.get("/api/v1/events/", { params: { include_past: true } });
+      setEvents(res.data ?? []);
+    } catch {
+      toast.error("Failed to load events.");
+    } finally {
+      setLoadingEvents(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadEvents();
+  }, [loadEvents]);
+
+  const startEdit = (event: AppEvent) => {
+    setEditingId(event.id);
+    setDraftDate(event.event_date);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setDraftDate("");
+  };
+
+  const saveDate = async (event: AppEvent) => {
+    if (!draftDate) {
+      toast.error("Pick a date.");
+      return;
+    }
+    if (draftDate === event.event_date) {
+      cancelEdit();
+      return;
+    }
+    setSavingId(event.id);
+    try {
+      const res = await apiClient.patch(`/api/v1/events/${event.id}`, {
+        event_date: draftDate,
+      });
+      setEvents((prev) =>
+        prev
+          .map((e) => (e.id === event.id ? { ...e, ...res.data } : e))
+          .sort((a, b) => a.event_date.localeCompare(b.event_date)),
+      );
+      toast.success(`${event.title} updated to ${format(parseISO(draftDate), "MMM d, yyyy")}`);
+      cancelEdit();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to update event.";
+      toast.error(msg);
+    } finally {
+      setSavingId(null);
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-3xl">
-      {/* Header */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
         <p className="text-muted-foreground text-sm mt-1">
@@ -59,7 +131,6 @@ export default function SettingsPage() {
         </p>
       </div>
 
-      {/* Profile */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
@@ -76,7 +147,6 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Goals */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
@@ -98,7 +168,6 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Daily schedule */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
@@ -115,7 +184,6 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Events */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
@@ -123,19 +191,82 @@ export default function SettingsPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
-          {EVENTS.map((e) => (
-            <div
-              key={e.label}
-              className={`flex items-center justify-between p-3 rounded-lg ${e.color} bg-opacity-10`}
-            >
-              <span className="text-sm font-medium">{e.label}</span>
-              <span className="text-sm">{e.date}</span>
+          {loadingEvents ? (
+            <div className="flex justify-center py-6">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             </div>
-          ))}
+          ) : events.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-2">No events configured yet.</p>
+          ) : (
+            events.map((event) => {
+              const editing = editingId === event.id;
+              const saving = savingId === event.id;
+              return (
+                <div
+                  key={event.id}
+                  className={`flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between p-3 rounded-lg ${eventAccent(event.event_type)}`}
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">{event.title}</p>
+                    <p className="text-[11px] opacity-80 mt-0.5">
+                      {event.days_remaining >= 0
+                        ? `${event.days_remaining} days remaining`
+                        : `${Math.abs(event.days_remaining)} days ago`}
+                      {event.peak_priority ? ` · ${event.peak_priority} peak` : ""}
+                    </p>
+                  </div>
+
+                  {editing ? (
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="date"
+                        value={draftDate}
+                        min={todayStr()}
+                        onChange={(e) => setDraftDate(e.target.value)}
+                        className="h-8 w-[150px] bg-background text-foreground"
+                        disabled={saving}
+                      />
+                      <Button
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => saveDate(event)}
+                        disabled={saving}
+                      >
+                        {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8"
+                        onClick={cancelEdit}
+                        disabled={saving}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">
+                        {format(parseISO(event.event_date), "MMMM d, yyyy")}
+                      </span>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8 text-current"
+                        onClick={() => startEdit(event)}
+                        aria-label={`Edit ${event.title} date`}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
         </CardContent>
       </Card>
 
-      {/* Dietary preferences */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
@@ -160,7 +291,6 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* AI / System info */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
@@ -188,7 +318,6 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* System status */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">

@@ -26,7 +26,13 @@ interface DashboardSummary {
     gym_sessions_scheduled: number;
     adherence_pct: number;
   };
-  countdowns?: { label: string; days: number }[];
+  upcoming_events?: Array<{
+    id: string;
+    title: string;
+    type: string;
+    date: string;
+    days_remaining: number;
+  }>;
 }
 
 const DAILY_SCHEDULE = [
@@ -251,18 +257,23 @@ export default function SchedulePage() {
             <CardTitle className="text-base">Key Events</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <EventItem
-              label="Pre-Wedding Shoot"
-              date="October 20, 2026"
-              targetDate={new Date(2026, 9, 20)}
-              color="text-amber-400"
-            />
-            <EventItem
-              label="Wedding Day"
-              date="January 30, 2027"
-              targetDate={new Date(2027, 0, 30)}
-              color="text-red-400"
-            />
+            {(summary?.upcoming_events ?? []).length === 0 ? (
+              <p className="text-sm text-muted-foreground">No upcoming events.</p>
+            ) : (
+              (summary?.upcoming_events ?? []).map((event) => (
+                <EventItem
+                  key={event.id}
+                  label={event.title}
+                  date={format(new Date(event.date), "MMMM d, yyyy")}
+                  days={event.days_remaining}
+                  color={
+                    event.type.toLowerCase().includes("wedding") && !event.title.toLowerCase().includes("pre")
+                      ? "text-red-400"
+                      : "text-amber-400"
+                  }
+                />
+              ))
+            )}
             <div className="pt-4 border-t">
               <p className="text-xs text-muted-foreground font-medium mb-3">Weekly Targets</p>
               <div className="space-y-2">
@@ -298,11 +309,10 @@ function LegendItem({ color, label }: { color: string; label: string }) {
 }
 
 function EventItem({
-  label, date, targetDate, color,
+  label, date, days, color,
 }: {
-  label: string; date: string; targetDate: Date; color: string;
+  label: string; date: string; days: number; color: string;
 }) {
-  const days = Math.ceil((targetDate.getTime() - Date.now()) / 86400000);
   return (
     <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border/50">
       <div>
