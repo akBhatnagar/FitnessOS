@@ -23,9 +23,26 @@ from app.db.session import get_db
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
-# Event dates are always calculated dynamically
-PRE_WEDDING_DATE = date(2026, 10, 20)
-WEDDING_DATE = date(2027, 1, 30)
+
+def _find_wedding(events: list):
+    for event in events:
+        type_l = str(event.event_type).lower()
+        title_l = event.title.lower()
+        if "wedding" in type_l or "wedding" in title_l:
+            if "pre" in type_l or "pre" in title_l or "photo" in type_l or "photo" in title_l:
+                continue
+            return event
+    return None
+
+
+def _find_pre_wedding(events: list):
+    for event in events:
+        haystack = f"{event.event_type} {event.title}".lower()
+        if any(n in haystack for n in ("pre_wedding", "pre-wedding", "photoshoot", "photo_shoot", "photo shoot")):
+            return event
+        if "pre" in haystack and "wedding" in haystack:
+            return event
+    return None
 
 
 @router.get("/summary")
@@ -138,16 +155,24 @@ async def get_dashboard_summary(
             for m in reversed(measurements)
         ],
         "countdowns": {
-            "pre_wedding": {
-                "title": "Pre-Wedding Shoot",
-                "date": PRE_WEDDING_DATE.isoformat(),
-                "days_remaining": (PRE_WEDDING_DATE - today).days,
-            },
-            "wedding": {
-                "title": "Wedding",
-                "date": WEDDING_DATE.isoformat(),
-                "days_remaining": (WEDDING_DATE - today).days,
-            },
+            "pre_wedding": (
+                {
+                    "title": pre_wedding.title,
+                    "date": pre_wedding.event_date.isoformat(),
+                    "days_remaining": (pre_wedding.event_date - today).days,
+                }
+                if (pre_wedding := _find_pre_wedding(events))
+                else None
+            ),
+            "wedding": (
+                {
+                    "title": wedding.title,
+                    "date": wedding.event_date.isoformat(),
+                    "days_remaining": (wedding.event_date - today).days,
+                }
+                if (wedding := _find_wedding(events))
+                else None
+            ),
         },
         "upcoming_events": [
             {

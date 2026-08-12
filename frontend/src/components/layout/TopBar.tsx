@@ -1,38 +1,79 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { format, differenceInDays } from "date-fns";
+import { useEffect, useRef, useState } from "react";
+import { format, parseISO, differenceInWeeks, differenceInMonths } from "date-fns";
 import { Bell, Search, X, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useRouter } from "next/navigation";
+import { apiClient } from "@/services/api";
 
-const EVENTS = [
-  { label: "Pre-Wedding Shoot", date: new Date(2026, 9, 20), color: "text-amber-400", bg: "bg-amber-500/10" },
-  { label: "Wedding Day", date: new Date(2027, 0, 30), color: "text-red-400", bg: "bg-red-500/10" },
-];
+interface AppEvent {
+  id: string;
+  title: string;
+  description?: string | null;
+  event_type: string;
+  event_date: string;
+  location?: string | null;
+  peak_priority: string;
+  days_remaining: number;
+  is_critical: boolean;
+  is_upcoming: boolean;
+}
 
-function getNotifications() {
+function shortLabel(title: string, eventType: string): string {
+  const t = title.toLowerCase();
+  const type = eventType.toLowerCase();
+  if (t.includes("pre-wedding") || t.includes("pre wedding") || type.includes("photo")) {
+    return "Pre-Wedding";
+  }
+  if (t.includes("wedding") || type === "wedding") return "Wedding";
+  return title.length > 14 ? `${title.slice(0, 12)}…` : title;
+}
+
+function pillClasses(eventType: string): string {
+  const t = eventType.toLowerCase();
+  if (t.includes("wedding") && !t.includes("pre")) {
+    return "bg-red-500/10 text-red-500 border-red-500/20";
+  }
+  if (t.includes("photo") || t.includes("pre")) {
+    return "bg-amber-500/10 text-amber-500 border-amber-500/20";
+  }
+  return "bg-primary/10 text-primary border-primary/20";
+}
+
+function formatCountdownDetail(days: number): string {
+  if (days < 0) return `${Math.abs(days)} days ago`;
+  if (days === 0) return "Today";
+  if (days === 1) return "Tomorrow";
+  const weeks = Math.floor(days / 7);
+  const months = Math.floor(days / 30);
+  if (months >= 2) return `${days} days · ~${months} months`;
+  if (weeks >= 2) return `${days} days · ~${weeks} weeks`;
+  return `${days} days`;
+}
+
+function getNotifications(events: AppEvent[]) {
   const today = new Date();
   const notifications = [];
 
-  // Event countdowns
-  for (const event of EVENTS) {
-    const days = differenceInDays(event.date, today);
+  for (const event of events) {
+    const days = event.days_remaining;
     if (days >= 0 && days <= 120) {
       notifications.push({
-        id: `event-${event.label}`,
+        id: `event-${event.id}`,
         type: "event",
-        title: `${days} days until ${event.label}`,
-        body: `Stay consistent — every workout counts toward ${event.label.toLowerCase()}.`,
+        title: `${days} days until ${event.title}`,
+        body: `Stay consistent — every workout counts toward ${event.title.toLowerCase()}.`,
         urgent: days <= 30,
-        color: event.color,
+        color: event.event_type.toLowerCase().includes("wedding") && !event.event_type.toLowerCase().includes("pre")
+          ? "text-red-400"
+          : "text-amber-400",
       });
     }
   }
 
-  // Daily reminders
   const hour = today.getHours();
   if (hour >= 7 && hour < 9) {
     notifications.push({
@@ -55,7 +96,6 @@ function getNotifications() {
     });
   }
 
-  // Weekly review reminder (Sunday)
   if (today.getDay() === 0) {
     notifications.push({
       id: "reminder-review",
@@ -67,7 +107,6 @@ function getNotifications() {
     });
   }
 
-  // Generic motivation
   notifications.push({
     id: "motivation",
     type: "tip",
@@ -85,13 +124,32 @@ export function TopBar() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [searchValue, setSearchValue] = useState("");
+  const [events, setEvents] = useState<AppEvent[]>([]);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  const allNotifications = getNotifications();
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await apiClient.get("/api/v1/events/");
+        if (!cancelled) setEvents(res.data ?? []);
+      } catch {
+        // Keep empty — pills simply hide until events load
+      }
+    };
+    load();
+    const onFocus = () => load();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", onFocus);
+    };
+  }, []);
+
+  const allNotifications = getNotifications(events);
   const visibleNotifications = allNotifications.filter((n) => !dismissed.has(n.id));
   const hasUnread = visibleNotifications.length > 0;
 
-  // Close panel on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
@@ -111,9 +169,10 @@ export function TopBar() {
     }
   };
 
+  const upcomingEvents = events.filter((e) => e.days_remaining >= 0);
+
   return (
     <header className="flex h-16 items-center justify-between border-b bg-card/50 px-6 backdrop-blur-sm sticky top-0 z-10">
-      {/* Search */}
       <div className="flex items-center gap-3 w-72 relative">
         <Search className="h-4 w-4 text-muted-foreground absolute ml-3 pointer-events-none" />
         <Input
@@ -126,21 +185,17 @@ export function TopBar() {
       </div>
 
       <div className="flex items-center gap-2" ref={panelRef}>
-        {/* Countdown pills */}
         <div className="hidden md:flex items-center gap-2 mr-4">
-          <CountdownPill
-            label="Pre-Wedding"
-            targetDate={new Date(2026, 9, 20)}
-            className="bg-amber-500/10 text-amber-500 border-amber-500/20"
-          />
-          <CountdownPill
-            label="Wedding"
-            targetDate={new Date(2027, 0, 30)}
-            className="bg-red-500/10 text-red-500 border-red-500/20"
-          />
+          {upcomingEvents.map((event) => (
+            <CountdownPill
+              key={event.id}
+              label={shortLabel(event.title, event.event_type)}
+              event={event}
+              className={pillClasses(event.event_type)}
+            />
+          ))}
         </div>
 
-        {/* Notification bell */}
         <div className="relative">
           <Button
             variant="ghost"
@@ -154,7 +209,6 @@ export function TopBar() {
             )}
           </Button>
 
-          {/* Notification panel */}
           {showNotifications && (
             <div className="absolute right-0 top-12 w-80 bg-card border border-border rounded-xl shadow-xl z-50 overflow-hidden">
               <div className="flex items-center justify-between px-4 py-3 border-b">
@@ -226,24 +280,81 @@ export function TopBar() {
 
 function CountdownPill({
   label,
-  targetDate,
+  event,
   className,
 }: {
   label: string;
-  targetDate: Date;
+  event: AppEvent;
   className?: string;
 }) {
-  const today = new Date();
-  const days = Math.ceil((targetDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-
+  const days = event.days_remaining;
   if (days < 0) return null;
 
+  const date = parseISO(event.event_date);
+  const weeks = differenceInWeeks(date, new Date());
+  const months = differenceInMonths(date, new Date());
+  const weekdays = format(date, "EEEE");
+
   return (
-    <div
-      className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium cursor-default ${className}`}
-    >
-      <span>{label}:</span>
-      <span className="font-bold">{days}d</span>
+    <div className="relative group">
+      <div
+        className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium cursor-default ${className}`}
+      >
+        <span>{label}:</span>
+        <span className="font-bold">{days}d</span>
+      </div>
+
+      <div
+        className="pointer-events-none absolute left-1/2 top-full z-50 mt-2 w-64 -translate-x-1/2 rounded-xl border bg-card p-3 text-left shadow-xl opacity-0 scale-95 transition-all duration-150 group-hover:opacity-100 group-hover:scale-100"
+        role="tooltip"
+      >
+        <p className="text-sm font-semibold text-foreground">{event.title}</p>
+        <div className="mt-2 space-y-1.5 text-[11px] text-muted-foreground">
+          <div className="flex justify-between gap-3">
+            <span>Date</span>
+            <span className="font-medium text-foreground">
+              {format(date, "EEE, MMM d, yyyy")}
+            </span>
+          </div>
+          <div className="flex justify-between gap-3">
+            <span>Countdown</span>
+            <span className="font-medium text-foreground">{formatCountdownDetail(days)}</span>
+          </div>
+          {weeks > 0 && (
+            <div className="flex justify-between gap-3">
+              <span>Weeks left</span>
+              <span className="font-medium text-foreground">{weeks}</span>
+            </div>
+          )}
+          {months > 0 && (
+            <div className="flex justify-between gap-3">
+              <span>Months left</span>
+              <span className="font-medium text-foreground">~{months}</span>
+            </div>
+          )}
+          <div className="flex justify-between gap-3">
+            <span>Falls on</span>
+            <span className="font-medium text-foreground">{weekdays}</span>
+          </div>
+          {event.peak_priority && (
+            <div className="flex justify-between gap-3">
+              <span>Peak focus</span>
+              <span className="font-medium text-foreground capitalize">{event.peak_priority}</span>
+            </div>
+          )}
+          {event.location && (
+            <div className="flex justify-between gap-3">
+              <span>Location</span>
+              <span className="font-medium text-foreground">{event.location}</span>
+            </div>
+          )}
+          {event.is_critical && (
+            <p className="pt-1 text-[10px] font-medium text-red-400">
+              Critical window — within 30 days
+            </p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
