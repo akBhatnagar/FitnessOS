@@ -34,6 +34,10 @@ interface MealItem {
   id: string;
   food_name: string;
   quantity_g: number;
+  quantity_display?: number;
+  unit_type?: "nos" | "grams" | "ml";
+  display_unit?: string;
+  weight_per_unit_g?: number | null;
   calories: number;
   protein_g: number;
   carbs_g: number;
@@ -65,6 +69,9 @@ interface FoodResult {
   is_vegan: boolean;
   is_custom?: boolean;
   tags: string[];
+  unit_type?: "nos" | "grams" | "ml";
+  display_unit?: string;
+  weight_per_unit_g?: number | null;
 }
 
 interface DayData {
@@ -244,7 +251,13 @@ function FoodSearchPanel({
 
   const selectFood = (f: FoodResult) => {
     setSelected(f);
-    if (f.serving_size_g) setQuantity(f.serving_size_g.toString());
+    if (f.unit_type === "nos" && f.weight_per_unit_g) {
+      setQuantity("1");
+    } else if (f.serving_size_g) {
+      setQuantity(f.serving_size_g.toString());
+    } else {
+      setQuantity("100");
+    }
   };
 
   const openManual = (name?: string) => {
@@ -260,10 +273,16 @@ function FoodSearchPanel({
     if (!selected || !quantity) return;
     setAdding(true);
     try {
+      const isUnit = selected.unit_type === "nos" && selected.weight_per_unit_g;
+      const qtyNum = parseFloat(quantity);
+      const gramsForApi = isUnit ? qtyNum * selected.weight_per_unit_g! : qtyNum;
       const res = await apiClient.post(`/api/v1/nutrition/meals/${mealId}/items`, {
         food_id: selected.id,
         food_name: selected.name,
-        quantity_g: parseFloat(quantity),
+        quantity_g: gramsForApi,
+        unit_type: selected.unit_type || "grams",
+        quantity_units: isUnit ? qtyNum : undefined,
+        weight_per_unit_g: isUnit ? selected.weight_per_unit_g : undefined,
       });
       toast.success(`Added ${selected.name} — ${res.data.protein_g}g protein`);
       onAdded();
@@ -324,12 +343,15 @@ function FoodSearchPanel({
     }
   };
 
-  const qtyNum = parseFloat(quantity) || 100;
+  const qtyNum = parseFloat(quantity) || (selected?.unit_type === "nos" ? 1 : 100);
+  const gramsForCalc = selected?.unit_type === "nos" && selected?.weight_per_unit_g
+    ? qtyNum * selected.weight_per_unit_g
+    : qtyNum;
   const preview = selected ? {
-    calories: Math.round(selected.calories_per_100g * qtyNum / 100),
-    protein: Math.round(selected.protein_g * qtyNum / 100 * 10) / 10,
-    carbs: Math.round(selected.carbs_g * qtyNum / 100 * 10) / 10,
-    fat: Math.round(selected.fat_g * qtyNum / 100 * 10) / 10,
+    calories: Math.round(selected.calories_per_100g * gramsForCalc / 100),
+    protein: Math.round(selected.protein_g * gramsForCalc / 100 * 10) / 10,
+    carbs: Math.round(selected.carbs_g * gramsForCalc / 100 * 10) / 10,
+    fat: Math.round(selected.fat_g * gramsForCalc / 100 * 10) / 10,
   } : null;
 
   return (
@@ -532,15 +554,27 @@ function FoodSearchPanel({
           </div>
 
           <div>
-            <label className="text-xs text-muted-foreground">Quantity (grams)</label>
+            <label className="text-xs text-muted-foreground">
+              {selected.unit_type === "nos"
+                ? "Quantity (nos)"
+                : selected.unit_type === "ml"
+                  ? "Quantity (ml)"
+                  : "Quantity (grams)"}
+            </label>
             <div className="flex gap-2 mt-1">
               <Input
                 type="number"
                 value={quantity}
                 onChange={(e) => setQuantity(e.target.value)}
                 className="font-mono text-lg font-bold"
+                min={selected.unit_type === "nos" ? 1 : 10}
+                step={selected.unit_type === "nos" ? 1 : 10}
               />
-              {selected.serving_size_g && (
+              {selected.unit_type === "nos" && selected.weight_per_unit_g ? (
+                <div className="flex items-center text-xs text-muted-foreground whitespace-nowrap px-2 border rounded-md bg-muted/30">
+                  = {Math.round((parseFloat(quantity) || 1) * selected.weight_per_unit_g)}g
+                </div>
+              ) : selected.serving_size_g && selected.unit_type !== "nos" ? (
                 <Button
                   variant="outline"
                   size="sm"
@@ -549,7 +583,7 @@ function FoodSearchPanel({
                 >
                   1 serving ({selected.serving_size_g}g)
                 </Button>
-              )}
+              ) : null}
             </div>
           </div>
 
@@ -660,7 +694,13 @@ function MealCard({
               <div key={item.id} className="flex items-center justify-between text-sm rounded-lg bg-muted/20 px-3 py-2">
                 <span>{item.food_name}</span>
                 <div className="flex items-center gap-3 text-muted-foreground text-xs">
-                  <span>{item.quantity_g}g</span>
+                  <span>
+                    {item.unit_type === "nos" && item.quantity_display != null
+                      ? `${item.quantity_display} nos`
+                      : item.unit_type === "ml"
+                        ? `${item.quantity_g} ml`
+                        : `${item.quantity_g}g`}
+                  </span>
                   <span className="font-medium text-red-400">{item.protein_g}g P</span>
                   <span>{Math.round(item.calories)} kcal</span>
                 </div>

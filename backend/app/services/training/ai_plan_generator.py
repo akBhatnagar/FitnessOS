@@ -35,11 +35,22 @@ _BODYWEIGHT_NAME_HINTS = (
     "push-up", "push up", "pull-up", "pull up", "chin-up", "chin up",
     "dip", "plank", "burpee", "muscle-up", "inverted row", "hanging leg",
     "sit-up", "sit up", "crunch", "mountain climber", "jumping jack",
+    "lunge", "squat",
 )
 
 _WEIGHT_IRRELEVANT_HINTS = (
     "push-up", "push up", "plank", "burpee", "sit-up", "sit up",
     "crunch", "mountain climber", "jumping jack",
+)
+
+_BODYWEIGHT_WEIGHTED_HINTS = (
+    "pull-up", "pull up", "chin-up", "chin up", "dip",
+    "lunge", "squat",
+)
+
+_BARBELL_NAME_HINTS = (
+    "barbell", "bench press", "deadlift", "squat rack", "overhead press",
+    "barbell row", "pendlay row", "t-bar",
 )
 
 
@@ -57,30 +68,57 @@ def infer_load_meta(exercise: Exercise) -> dict[str, Any]:
         or "no_equipment" in tags
         or any(h in name for h in _BODYWEIGHT_NAME_HINTS)
     )
+
+    has_external_load = any(
+        x in equipment
+        for x in ("barbell", "dumbbells", "cable", "machine", "smith_machine", "pull_up_bar", "kettlebell")
+    )
+
     weight_irrelevant = (
         any(h in name for h in _WEIGHT_IRRELEVANT_HINTS)
         or (
             is_bodyweight
-            and not any(
-                x in equipment
-                for x in ("barbell", "dumbbells", "cable", "machine", "smith_machine", "pull_up_bar")
-            )
-            and not any(h in name for h in ("pull-up", "pull up", "chin-up", "chin up", "dip"))
+            and not has_external_load
+            and not any(h in name for h in _BODYWEIGHT_WEIGHTED_HINTS)
         )
     )
 
+    # Determine load_display and load_label
     if weight_irrelevant:
         load_display = "bodyweight"
-        load_label = "Bodyweight — no load to enter"
+        load_label = "Bodyweight"
+    elif is_bodyweight and any(h in name for h in _BODYWEIGHT_WEIGHTED_HINTS):
+        if has_external_load:
+            if "dumbbells" in equipment or "dumbbell" in name:
+                load_display = "per_hand"
+                load_label = "kg / hand"
+            elif "barbell" in equipment or any(h in name for h in _BARBELL_NAME_HINTS):
+                load_display = "total"
+                load_label = "kg total (bar+plates)"
+            else:
+                load_display = "total"
+                load_label = "kg total"
+        else:
+            load_display = "bodyweight_plus"
+            load_label = "+kg (added weight)"
     elif "dumbbells" in equipment or "dumbbell" in name:
         load_display = "per_hand"
-        load_label = "kg each dumbbell"
+        load_label = "kg / hand"
     elif "kettlebell" in " ".join(equipment) or "kettlebell" in name:
         load_display = "per_hand"
-        load_label = "kg each kettlebell"
+        load_label = "kg (kettlebell)"
+    elif "barbell" in equipment or any(h in name for h in _BARBELL_NAME_HINTS):
+        load_display = "total"
+        load_label = "kg total (bar+plates)"
+    elif "cable" in equipment or "cable" in name:
+        load_display = "machine"
+        load_label = "kg (cable)"
+    elif "machine" in equipment or "machine" in name or "smith_machine" in equipment:
+        load_display = "machine"
+        load_label = "kg (machine)"
     else:
         load_display = "total"
-        load_label = "kg total"
+        load_label = "kg"
 
     return {
         "weight_irrelevant": weight_irrelevant,

@@ -39,6 +39,7 @@ interface Session {
   id: string;
   session_name: string;
   scheduled_date: string;
+  date?: string;
   status: string;
   muscle_groups: string[];
   duration_minutes: number | null;

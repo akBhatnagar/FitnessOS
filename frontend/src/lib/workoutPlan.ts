@@ -80,6 +80,20 @@ export function renumberSets(sets: PlanSet[]): PlanSet[] {
 export function weightColumnLabel(ex: Pick<PlanExercise, "weight_irrelevant" | "load_display" | "load_label">): string {
   if (ex.weight_irrelevant || ex.load_display === "bodyweight") return "Load";
   if (ex.load_label) return ex.load_label;
-  if (ex.load_display === "per_hand") return "kg each";
-  return "Weight (kg)";
+  if (ex.load_display === "per_hand") return "kg / hand";
+  if (ex.load_display === "bodyweight_plus") return "+kg";
+  if (ex.load_display === "machine") return "kg (machine)";
+  return "kg";
+}
+
+export function loadIndicatorText(ex: Pick<PlanExercise, "weight_irrelevant" | "load_display" | "load_label">): string | null {
+  if (ex.weight_irrelevant || ex.load_display === "bodyweight") return "Bodyweight";
+  if (ex.load_display === "per_hand") return "Per dumbbell";
+  if (ex.load_display === "bodyweight_plus") return "Added weight";
+  if (ex.load_display === "machine") return "Machine load";
+  if (ex.load_display === "total") {
+    if (ex.load_label?.includes("bar")) return "Total (incl. bar)";
+    return "Total weight";
+  }
+  return null;
 }
