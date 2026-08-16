@@ -23,6 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.dates import today_in_timezone
 from app.core.security import TokenPayload, get_current_user
@@ -164,6 +165,8 @@ async def _upsert_user_food(
     carbs_g: float,
     fat_g: float,
     db: AsyncSession,
+    unit_type: str | None = None,
+    grams_per_unit: float | None = None,
 ) -> FoodItem | None:
     """
     Save or update a user-created food in the library (macros normalised per 100g).
@@ -193,15 +196,25 @@ async def _upsert_user_food(
     )
     food = existing_result.scalar_one_or_none()
 
+    is_nos = (unit_type or "").lower() == "nos"
+    serving_g = grams_per_unit if is_nos and grams_per_unit else quantity_g
+    serving_desc = f"1 nos (~{serving_g:g}g)" if is_nos else f"{quantity_g:g}g serving"
+    tags = list((food.tags if food else None) or [])
+    if "custom" not in tags:
+        tags.append("custom")
+    if is_nos and "countable" not in tags:
+        tags.append("countable")
+    if not is_nos:
+        tags = [t for t in tags if t != "countable"]
+
     if food:
         food.calories_per_100g = per_100g["calories_per_100g"]
         food.protein_g = per_100g["protein_g"]
         food.carbs_g = per_100g["carbs_g"]
         food.fat_g = per_100g["fat_g"]
-        food.serving_size_g = Decimal(str(quantity_g))
-        food.serving_description = f"{quantity_g}g serving"
-        if "custom" not in (food.tags or []):
-            food.tags = list(food.tags or []) + ["custom"]
+        food.serving_size_g = Decimal(str(serving_g))
+        food.serving_description = serving_desc
+        food.tags = tags
     else:
         food = FoodItem(
             name=clean_name,
@@ -213,9 +226,9 @@ async def _upsert_user_food(
             protein_g=per_100g["protein_g"],
             carbs_g=per_100g["carbs_g"],
             fat_g=per_100g["fat_g"],
-            serving_size_g=Decimal(str(quantity_g)),
-            serving_description=f"{quantity_g}g serving",
-            tags=["custom"],
+            serving_size_g=Decimal(str(serving_g)),
+            serving_description=serving_desc,
+            tags=tags,
         )
         db.add(food)
 
@@ -284,13 +297,24 @@ def _meal_to_dict(meal: Meal, items: list = []) -> dict:
 
 
 def _item_to_dict(item: MealItem) -> dict:
-    unit_type, weight_per_unit = classify_food_unit(item.food_name)
+    food = getattr(item, "food", None)
+    unit_type, weight_per_unit = classify_food_unit(
+        item.food_name,
+        food.serving_description if food else None,
+        list(food.tags or []) if food else None,
+    )
     qty_grams = float(item.quantity_g)
-    if unit_type == "nos" and weight_per_unit:
-        display_qty = round(qty_grams / weight_per_unit, 1)
-        # Clean up fractional units: 1.0 -> 1, 2.0 -> 2
-        if display_qty == int(display_qty):
-            display_qty = int(display_qty)
+    if unit_type == "nos":
+        per_unit = weight_per_unit
+        if not per_unit and food and food.serving_size_g:
+            per_unit = float(food.serving_size_g)
+        if per_unit:
+            display_qty = round(qty_grams / per_unit, 1)
+            if display_qty == int(display_qty):
+                display_qty = int(display_qty)
+            weight_per_unit = per_unit
+        else:
+            display_qty = qty_grams
     else:
         display_qty = qty_grams
     return {
@@ -428,7 +452,9 @@ async def get_today_summary(
 
     for meal in meals:
         items_result = await db.execute(
-            select(MealItem).where(MealItem.meal_id == meal.id)
+            select(MealItem)
+            .where(MealItem.meal_id == meal.id)
+            .options(selectinload(MealItem.food))
         )
         items = items_result.scalars().all()
         meal_dicts.append(_meal_to_dict(meal, items))
@@ -546,7 +572,15 @@ async def add_food_item(
 
     # Resolve actual grams: if unit-based quantity provided, convert
     actual_grams = request.quantity_g
-    if request.quantity_units and request.weight_per_unit_g:
+    grams_per_unit = request.weight_per_unit_g
+    unit_type = (request.unit_type or "").lower()
+    if unit_type == "nos":
+        if not grams_per_unit:
+            _, grams_per_unit = classify_food_unit(request.food_name)
+            grams_per_unit = grams_per_unit or 50.0
+        count = request.quantity_units if request.quantity_units else request.quantity_g
+        actual_grams = count * grams_per_unit
+    elif request.quantity_units and request.weight_per_unit_g:
         actual_grams = request.quantity_units * request.weight_per_unit_g
 
     calories = request.calories_override
@@ -579,6 +613,8 @@ async def add_food_item(
             carbs_g or 0,
             fat_g or 0,
             db,
+            unit_type=unit_type or None,
+            grams_per_unit=grams_per_unit,
         )
         food_db_id = saved_food.id if saved_food else None
 
@@ -659,7 +695,15 @@ async def quick_log_meal(
     for item_req in request.items:
         # Handle unit-based quantities
         item_grams = item_req.quantity_g
-        if item_req.quantity_units and item_req.weight_per_unit_g:
+        grams_per_unit = item_req.weight_per_unit_g
+        unit_type = (item_req.unit_type or "").lower()
+        if unit_type == "nos":
+            if not grams_per_unit:
+                _, grams_per_unit = classify_food_unit(item_req.food_name)
+                grams_per_unit = grams_per_unit or 50.0
+            count = item_req.quantity_units if item_req.quantity_units else item_req.quantity_g
+            item_grams = count * grams_per_unit
+        elif item_req.quantity_units and item_req.weight_per_unit_g:
             item_grams = item_req.quantity_units * item_req.weight_per_unit_g
 
         calories = item_req.calories_override
@@ -690,6 +734,8 @@ async def quick_log_meal(
                 item_req.carbs_override or 0,
                 item_req.fat_override or 0,
                 db,
+                unit_type=unit_type or None,
+                grams_per_unit=grams_per_unit,
             )
             food_db_id = saved_food.id if saved_food else None
 
