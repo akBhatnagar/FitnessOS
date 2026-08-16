@@ -8,6 +8,7 @@ Endpoints:
 - POST /nutrition/meals              — log a new meal
 - POST /nutrition/meals/:id/items    — add food item to meal
 - DELETE /nutrition/meals/:id        — delete a meal
+- PATCH  /nutrition/meals/:id        — move a meal to another date
 - GET  /nutrition/targets            — user's daily macro targets
 """
 
@@ -22,6 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.dates import today_in_timezone
 from app.core.security import TokenPayload, get_current_user
@@ -29,6 +31,7 @@ from app.db.models.user import User, UserPreferences
 from app.db.models.nutrition import Food as FoodItem, Meal, MealItem
 from app.db.session import get_db
 from app.core.logging import get_logger
+from app.services.nutrition.food_units import classify_food_unit, get_display_unit, quantity_to_grams
 
 router = APIRouter(prefix="/nutrition", tags=["Nutrition"])
 logger = get_logger("api.nutrition")
@@ -48,7 +51,10 @@ class LogMealRequest(BaseModel):
 class AddFoodItemRequest(BaseModel):
     food_id: Optional[str] = Field(None, description="ID from food_database table")
     food_name: str = Field(min_length=1, max_length=255)
-    quantity_g: float = Field(gt=0, le=2000, description="Weight in grams")
+    quantity_g: float = Field(gt=0, le=5000, description="Weight in grams")
+    unit_type: Optional[str] = Field(None, description="nos, grams, or ml - used for display")
+    quantity_units: Optional[float] = Field(None, gt=0, description="Count when unit_type=nos (overrides quantity_g)")
+    weight_per_unit_g: Optional[float] = Field(None, gt=0, description="Grams per unit for conversion")
     # Manual entry (used when food_id not provided)
     calories_override: Optional[float] = None
     protein_override: Optional[float] = None
@@ -62,6 +68,10 @@ class QuickLogRequest(BaseModel):
     meal_date: Optional[date] = Field(None, description="YYYY-MM-DD, defaults to today (user timezone)")
     name: Optional[str] = None
     items: list[AddFoodItemRequest] = []
+
+
+class UpdateMealRequest(BaseModel):
+    meal_date: date
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -117,6 +127,11 @@ def _macros_to_per_100g(
 
 def _food_to_search_dict(food: FoodItem, user_id: uuid.UUID) -> dict:
     is_custom = bool(food.is_user_created and food.created_by_user_id == user_id)
+    unit_type, weight_per_unit = classify_food_unit(
+        food.name,
+        food.serving_description,
+        food.tags,
+    )
     return {
         "id": str(food.id),
         "name": food.name,
@@ -131,6 +146,9 @@ def _food_to_search_dict(food: FoodItem, user_id: uuid.UUID) -> dict:
         "serving_size_g": float(food.serving_size_g) if food.serving_size_g else None,
         "serving_description": food.serving_description,
         "tags": food.tags,
+        "unit_type": unit_type,
+        "display_unit": get_display_unit(unit_type),
+        "weight_per_unit_g": weight_per_unit,
         "per_serving": {
             "calories": round(float(food.calories_per_100g) * float(food.serving_size_g or 100) / 100, 1),
             "protein_g": round(float(food.protein_g) * float(food.serving_size_g or 100) / 100, 1),
@@ -147,6 +165,8 @@ async def _upsert_user_food(
     carbs_g: float,
     fat_g: float,
     db: AsyncSession,
+    unit_type: str | None = None,
+    grams_per_unit: float | None = None,
 ) -> FoodItem | None:
     """
     Save or update a user-created food in the library (macros normalised per 100g).
@@ -176,15 +196,25 @@ async def _upsert_user_food(
     )
     food = existing_result.scalar_one_or_none()
 
+    is_nos = (unit_type or "").lower() == "nos"
+    serving_g = grams_per_unit if is_nos and grams_per_unit else quantity_g
+    serving_desc = f"1 nos (~{serving_g:g}g)" if is_nos else f"{quantity_g:g}g serving"
+    tags = list((food.tags if food else None) or [])
+    if "custom" not in tags:
+        tags.append("custom")
+    if is_nos and "countable" not in tags:
+        tags.append("countable")
+    if not is_nos:
+        tags = [t for t in tags if t != "countable"]
+
     if food:
         food.calories_per_100g = per_100g["calories_per_100g"]
         food.protein_g = per_100g["protein_g"]
         food.carbs_g = per_100g["carbs_g"]
         food.fat_g = per_100g["fat_g"]
-        food.serving_size_g = Decimal(str(quantity_g))
-        food.serving_description = f"{quantity_g}g serving"
-        if "custom" not in (food.tags or []):
-            food.tags = list(food.tags or []) + ["custom"]
+        food.serving_size_g = Decimal(str(serving_g))
+        food.serving_description = serving_desc
+        food.tags = tags
     else:
         food = FoodItem(
             name=clean_name,
@@ -196,9 +226,9 @@ async def _upsert_user_food(
             protein_g=per_100g["protein_g"],
             carbs_g=per_100g["carbs_g"],
             fat_g=per_100g["fat_g"],
-            serving_size_g=Decimal(str(quantity_g)),
-            serving_description=f"{quantity_g}g serving",
-            tags=["custom"],
+            serving_size_g=Decimal(str(serving_g)),
+            serving_description=serving_desc,
+            tags=tags,
         )
         db.add(food)
 
@@ -262,18 +292,43 @@ def _meal_to_dict(meal: Meal, items: list = []) -> dict:
         "total_fat_g": float(meal.total_fat_g) if meal.total_fat_g else 0,
         "notes": meal.notes,
         "restaurant_name": meal.restaurant_name,
-        "items": [
-            {
-                "id": str(i.id),
-                "food_name": i.food_name,
-                "quantity_g": float(i.quantity_g),
-                "calories": float(i.calories) if i.calories else 0,
-                "protein_g": float(i.protein_g) if i.protein_g else 0,
-                "carbs_g": float(i.carbs_g) if i.carbs_g else 0,
-                "fat_g": float(i.fat_g) if i.fat_g else 0,
-            }
-            for i in items
-        ],
+        "items": [_item_to_dict(i) for i in items],
+    }
+
+
+def _item_to_dict(item: MealItem) -> dict:
+    food = getattr(item, "food", None)
+    unit_type, weight_per_unit = classify_food_unit(
+        item.food_name,
+        food.serving_description if food else None,
+        list(food.tags or []) if food else None,
+    )
+    qty_grams = float(item.quantity_g)
+    if unit_type == "nos":
+        per_unit = weight_per_unit
+        if not per_unit and food and food.serving_size_g:
+            per_unit = float(food.serving_size_g)
+        if per_unit:
+            display_qty = round(qty_grams / per_unit, 1)
+            if display_qty == int(display_qty):
+                display_qty = int(display_qty)
+            weight_per_unit = per_unit
+        else:
+            display_qty = qty_grams
+    else:
+        display_qty = qty_grams
+    return {
+        "id": str(item.id),
+        "food_name": item.food_name,
+        "quantity_g": qty_grams,
+        "quantity_display": display_qty,
+        "unit_type": unit_type,
+        "display_unit": get_display_unit(unit_type),
+        "weight_per_unit_g": weight_per_unit,
+        "calories": float(item.calories) if item.calories else 0,
+        "protein_g": float(item.protein_g) if item.protein_g else 0,
+        "carbs_g": float(item.carbs_g) if item.carbs_g else 0,
+        "fat_g": float(item.fat_g) if item.fat_g else 0,
     }
 
 
@@ -292,6 +347,58 @@ async def _recalculate_meal_totals(meal: Meal, db: AsyncSession) -> None:
     meal.total_protein_g = row.protein_g
     meal.total_carbs_g = row.carbs_g
     meal.total_fat_g = row.fat_g
+
+
+def _food_match_key(name: str) -> str:
+    return name.strip().lower()
+
+
+def _add_to_item(
+    item: MealItem,
+    quantity_g: float,
+    calories: float | None,
+    protein_g: float | None,
+    carbs_g: float | None,
+    fat_g: float | None,
+    food_id: uuid.UUID | None = None,
+) -> None:
+    item.quantity_g = Decimal(str(round(float(item.quantity_g or 0) + float(quantity_g or 0), 2)))
+    item.calories = Decimal(str(round(float(item.calories or 0) + float(calories or 0), 1)))
+    item.protein_g = Decimal(str(round(float(item.protein_g or 0) + float(protein_g or 0), 1)))
+    item.carbs_g = Decimal(str(round(float(item.carbs_g or 0) + float(carbs_g or 0), 1)))
+    item.fat_g = Decimal(str(round(float(item.fat_g or 0) + float(fat_g or 0), 1)))
+    if food_id and not item.food_id:
+        item.food_id = food_id
+
+
+async def _collapse_duplicate_meal_items(meal_id: uuid.UUID, db: AsyncSession) -> bool:
+    """Merge items with the same food name in a meal. Returns True if anything changed."""
+    result = await db.execute(
+        select(MealItem).where(MealItem.meal_id == meal_id).order_by(MealItem.created_at)
+    )
+    items = list(result.scalars().all())
+    groups: dict[str, list[MealItem]] = {}
+    for item in items:
+        groups.setdefault(_food_match_key(item.food_name), []).append(item)
+
+    changed = False
+    for group in groups.values():
+        if len(group) < 2:
+            continue
+        keeper = group[0]
+        for extra in group[1:]:
+            _add_to_item(
+                keeper,
+                float(extra.quantity_g or 0),
+                float(extra.calories or 0),
+                float(extra.protein_g or 0),
+                float(extra.carbs_g or 0),
+                float(extra.fat_g or 0),
+                extra.food_id,
+            )
+            await db.delete(extra)
+            changed = True
+    return changed
 
 
 # ─── Food Search ─────────────────────────────────────────────────────────────
@@ -396,8 +503,14 @@ async def get_today_summary(
     total_fat = 0.0
 
     for meal in meals:
+        collapsed = await _collapse_duplicate_meal_items(meal.id, db)
+        if collapsed:
+            await _recalculate_meal_totals(meal, db)
+            await db.commit()
         items_result = await db.execute(
-            select(MealItem).where(MealItem.meal_id == meal.id)
+            select(MealItem)
+            .where(MealItem.meal_id == meal.id)
+            .options(selectinload(MealItem.food))
         )
         items = items_result.scalars().all()
         meal_dicts.append(_meal_to_dict(meal, items))
@@ -513,6 +626,19 @@ async def add_food_item(
     if not meal:
         raise HTTPException(status_code=404, detail="Meal not found")
 
+    # Resolve actual grams: if unit-based quantity provided, convert
+    actual_grams = request.quantity_g
+    grams_per_unit = request.weight_per_unit_g
+    unit_type = (request.unit_type or "").lower()
+    if unit_type == "nos":
+        if not grams_per_unit:
+            _, grams_per_unit = classify_food_unit(request.food_name)
+            grams_per_unit = grams_per_unit or 50.0
+        count = request.quantity_units if request.quantity_units else request.quantity_g
+        actual_grams = count * grams_per_unit
+    elif request.quantity_units and request.weight_per_unit_g:
+        actual_grams = request.quantity_units * request.weight_per_unit_g
+
     calories = request.calories_override
     protein_g = request.protein_override
     carbs_g = request.carbs_override
@@ -526,7 +652,7 @@ async def add_food_item(
         )
         food = food_result.scalar_one_or_none()
         if food:
-            macros = _macros_from_food(food, request.quantity_g)
+            macros = _macros_from_food(food, actual_grams)
             calories = macros["calories"]
             protein_g = macros["protein_g"]
             carbs_g = macros["carbs_g"]
@@ -537,12 +663,14 @@ async def add_food_item(
         saved_food = await _upsert_user_food(
             user,
             request.food_name,
-            request.quantity_g,
+            actual_grams,
             calories,
             protein_g,
             carbs_g or 0,
             fat_g or 0,
             db,
+            unit_type=unit_type or None,
+            grams_per_unit=grams_per_unit,
         )
         food_db_id = saved_food.id if saved_food else None
 
@@ -552,17 +680,33 @@ async def add_food_item(
             detail="Calories and protein are required when adding a custom food.",
         )
 
-    item = MealItem(
-        meal_id=meal.id,
-        food_id=food_db_id,
-        food_name=request.food_name,
-        quantity_g=request.quantity_g,
-        calories=calories,
-        protein_g=protein_g,
-        carbs_g=carbs_g,
-        fat_g=fat_g,
+    existing_result = await db.execute(
+        select(MealItem).where(MealItem.meal_id == meal.id)
     )
-    db.add(item)
+    existing = next(
+        (
+            i for i in existing_result.scalars().all()
+            if _food_match_key(i.food_name) == _food_match_key(request.food_name)
+        ),
+        None,
+    )
+
+    if existing:
+        _add_to_item(existing, actual_grams, calories, protein_g, carbs_g, fat_g, food_db_id)
+        item = existing
+    else:
+        item = MealItem(
+            meal_id=meal.id,
+            food_id=food_db_id,
+            food_name=request.food_name,
+            quantity_g=actual_grams,
+            calories=calories,
+            protein_g=protein_g,
+            carbs_g=carbs_g,
+            fat_g=fat_g,
+        )
+        db.add(item)
+
     await db.flush()
 
     # Recompute meal totals
@@ -581,7 +725,7 @@ async def add_food_item(
         "item_id": str(item.id),
         "food_id": str(food_db_id) if food_db_id else None,
         "food_name": request.food_name,
-        "quantity_g": request.quantity_g,
+        "quantity_g": actual_grams,
         "calories": calories,
         "protein_g": protein_g,
         "meal_totals": {
@@ -621,6 +765,19 @@ async def quick_log_meal(
     await db.flush()
 
     for item_req in request.items:
+        # Handle unit-based quantities
+        item_grams = item_req.quantity_g
+        grams_per_unit = item_req.weight_per_unit_g
+        unit_type = (item_req.unit_type or "").lower()
+        if unit_type == "nos":
+            if not grams_per_unit:
+                _, grams_per_unit = classify_food_unit(item_req.food_name)
+                grams_per_unit = grams_per_unit or 50.0
+            count = item_req.quantity_units if item_req.quantity_units else item_req.quantity_g
+            item_grams = count * grams_per_unit
+        elif item_req.quantity_units and item_req.weight_per_unit_g:
+            item_grams = item_req.quantity_units * item_req.weight_per_unit_g
+
         calories = item_req.calories_override
         protein_g = item_req.protein_override
         carbs_g = item_req.carbs_override
@@ -633,7 +790,7 @@ async def quick_log_meal(
             )
             food = food_result.scalar_one_or_none()
             if food:
-                macros = _macros_from_food(food, item_req.quantity_g)
+                macros = _macros_from_food(food, item_grams)
                 calories = macros["calories"]
                 protein_g = macros["protein_g"]
                 carbs_g = macros["carbs_g"]
@@ -643,12 +800,14 @@ async def quick_log_meal(
             saved_food = await _upsert_user_food(
                 user,
                 item_req.food_name,
-                item_req.quantity_g,
+                item_grams,
                 item_req.calories_override,
                 item_req.protein_override,
                 item_req.carbs_override or 0,
                 item_req.fat_override or 0,
                 db,
+                unit_type=unit_type or None,
+                grams_per_unit=grams_per_unit,
             )
             food_db_id = saved_food.id if saved_food else None
 
@@ -656,7 +815,7 @@ async def quick_log_meal(
             meal_id=meal.id,
             food_id=food_db_id,
             food_name=item_req.food_name,
-            quantity_g=item_req.quantity_g,
+            quantity_g=item_grams,
             calories=calories,
             protein_g=protein_g,
             carbs_g=carbs_g,
@@ -665,6 +824,7 @@ async def quick_log_meal(
         db.add(item)
 
     await db.flush()
+    await _collapse_duplicate_meal_items(meal.id, db)
     await _recalculate_meal_totals(meal, db)
     await db.commit()
 
@@ -696,6 +856,47 @@ async def delete_meal(
     await db.delete(meal)
     await db.commit()
     return {"deleted": meal_id}
+
+
+@router.patch("/meals/{meal_id}")
+async def update_meal(
+    meal_id: str,
+    request: UpdateMealRequest,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Move an existing meal to a different date. Does not change food items or macros."""
+    user = await _get_user(current_user.sub, db)
+    today = _user_today(user)
+
+    if request.meal_date > today:
+        raise HTTPException(status_code=400, detail="Cannot move meals to future dates")
+
+    result = await db.execute(
+        select(Meal).where(Meal.id == uuid.UUID(meal_id), Meal.user_id == user.id)
+    )
+    meal = result.scalar_one_or_none()
+    if not meal:
+        raise HTTPException(status_code=404, detail="Meal not found")
+
+    old_date = meal.meal_date
+    meal.meal_date = request.meal_date
+    await db.commit()
+
+    logger.info(
+        "Meal date updated",
+        user=current_user.sub,
+        meal_id=meal_id,
+        from_date=old_date.isoformat(),
+        to_date=request.meal_date.isoformat(),
+    )
+
+    return {
+        "id": str(meal.id),
+        "meal_type": meal.meal_type,
+        "name": meal.name,
+        "meal_date": meal.meal_date.isoformat(),
+    }
 
 
 @router.get("/targets")

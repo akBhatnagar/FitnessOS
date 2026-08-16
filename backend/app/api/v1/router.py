@@ -7,6 +7,7 @@ from app.api.v1.routes.chat import router as chat_router
 from app.api.v1.routes.dashboard import router as dashboard_router
 from app.api.v1.routes.events import router as events_router
 from app.api.v1.routes.measurements import router as measurements_router
+from app.api.v1.routes.notifications import router as notifications_router
 from app.api.v1.routes.nutrition import router as nutrition_router
 from app.api.v1.routes.reviews import router as reviews_router
 from app.api.v1.routes.swimming import router as swimming_router
@@ -25,3 +26,4 @@ api_router.include_router(reviews_router)
 api_router.include_router(swimming_router)
 api_router.include_router(nutrition_router)
 api_router.include_router(analytics_router)
+api_router.include_router(notifications_router)

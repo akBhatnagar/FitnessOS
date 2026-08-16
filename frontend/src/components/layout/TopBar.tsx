@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { format, parseISO, differenceInWeeks, differenceInMonths } from "date-fns";
 import { Bell, Search, X, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,41 @@ interface AppEvent {
   is_critical: boolean;
   is_upcoming: boolean;
 }
+
+interface Notification {
+  id: string;
+  type: string;
+  title: string;
+  body: string;
+  urgent: boolean;
+  color: string;
+}
+
+// ─── LocalStorage Read State ────────────────────────────────────────────────
+
+const READ_STATE_KEY = "fitnessos:notifications:read";
+
+function getReadState(): Set<string> {
+  try {
+    const raw = localStorage.getItem(READ_STATE_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return new Set(parsed as string[]);
+    return new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function persistReadState(readIds: Set<string>) {
+  try {
+    localStorage.setItem(READ_STATE_KEY, JSON.stringify([...readIds]));
+  } catch {
+    // localStorage full or unavailable — fail silently
+  }
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function shortLabel(title: string, eventType: string): string {
   const t = title.toLowerCase();
@@ -54,10 +89,8 @@ function formatCountdownDetail(days: number): string {
   return `${days} days`;
 }
 
-function getNotifications(events: AppEvent[]) {
-  const today = new Date();
-  const notifications = [];
-
+function buildEventNotifications(events: AppEvent[]): Notification[] {
+  const notifications: Notification[] = [];
   for (const event of events) {
     const days = event.days_remaining;
     if (days >= 0 && days <= 120) {
@@ -73,60 +106,27 @@ function getNotifications(events: AppEvent[]) {
       });
     }
   }
-
-  const hour = today.getHours();
-  if (hour >= 7 && hour < 9) {
-    notifications.push({
-      id: "reminder-swim",
-      type: "reminder",
-      title: "Swimming session reminder",
-      body: "Your 8:00 AM swim is coming up. Stay consistent!",
-      urgent: false,
-      color: "text-blue-400",
-    });
-  }
-  if (hour >= 20 && hour < 22) {
-    notifications.push({
-      id: "reminder-gym",
-      type: "reminder",
-      title: "Gym session time",
-      body: "Your 9:00 PM gym session is scheduled for tonight.",
-      urgent: false,
-      color: "text-orange-400",
-    });
-  }
-
-  if (today.getDay() === 0) {
-    notifications.push({
-      id: "reminder-review",
-      type: "review",
-      title: "Weekly review day",
-      body: "It's Sunday — time for your weekly check-in with your AI coach.",
-      urgent: true,
-      color: "text-green-400",
-    });
-  }
-
-  notifications.push({
-    id: "motivation",
-    type: "tip",
-    title: "Today's tip",
-    body: "Progressive overload is the key to muscle growth. Add small weight increments each session.",
-    urgent: false,
-    color: "text-primary",
-  });
-
   return notifications;
 }
+
+// ─── TopBar Component ─────────────────────────────────────────────────────────
 
 export function TopBar() {
   const router = useRouter();
   const [showNotifications, setShowNotifications] = useState(false);
-  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const [readIds, setReadIds] = useState<Set<string>>(new Set());
   const [searchValue, setSearchValue] = useState("");
   const [events, setEvents] = useState<AppEvent[]>([]);
+  const [dailyTip, setDailyTip] = useState<string | null>(null);
+  const [tipLoading, setTipLoading] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
+  // Load read state from localStorage on mount
+  useEffect(() => {
+    setReadIds(getReadState());
+  }, []);
+
+  // Load events
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
@@ -146,10 +146,83 @@ export function TopBar() {
     };
   }, []);
 
-  const allNotifications = getNotifications(events);
-  const visibleNotifications = allNotifications.filter((n) => !dismissed.has(n.id));
-  const hasUnread = visibleNotifications.length > 0;
+  // Load daily tip once (only when notification panel is opened for the first time)
+  const loadDailyTip = useCallback(async () => {
+    if (dailyTip !== null || tipLoading) return;
+    setTipLoading(true);
+    try {
+      const res = await apiClient.get("/api/v1/notifications/daily-tip");
+      setDailyTip(res.data.tip);
+    } catch {
+      setDailyTip("Focus on consistency over perfection today.");
+    } finally {
+      setTipLoading(false);
+    }
+  }, [dailyTip, tipLoading]);
 
+  // Build notifications list
+  const allNotifications: Notification[] = [
+    ...buildEventNotifications(events),
+    ...(dailyTip
+      ? [{
+          id: "daily-tip",
+          type: "tip",
+          title: "Today's tip",
+          body: dailyTip,
+          urgent: false,
+          color: "text-primary",
+        }]
+      : []),
+  ];
+
+  const unreadNotifications = allNotifications.filter((n) => !readIds.has(n.id));
+  const hasUnread = unreadNotifications.length > 0 || dailyTip === null;
+
+  // Mark a single notification as read
+  const markRead = (id: string) => {
+    setReadIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      persistReadState(next);
+      return next;
+    });
+  };
+
+  // Mark all as read
+  const markAllRead = () => {
+    setReadIds((prev) => {
+      const next = new Set(prev);
+      allNotifications.forEach((n) => next.add(n.id));
+      persistReadState(next);
+      return next;
+    });
+    setShowNotifications(false);
+  };
+
+  // When panel opens, fetch tip if needed + mark visible notifications as read
+  useEffect(() => {
+    if (showNotifications) {
+      loadDailyTip();
+      // Auto-mark event notifications as read when panel is opened
+      const timer = setTimeout(() => {
+        setReadIds((prev) => {
+          const next = new Set(prev);
+          let changed = false;
+          allNotifications.forEach((n) => {
+            if (!next.has(n.id)) {
+              next.add(n.id);
+              changed = true;
+            }
+          });
+          if (changed) persistReadState(next);
+          return next;
+        });
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [showNotifications, dailyTip]);
+
+  // Close panel on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
@@ -204,7 +277,7 @@ export function TopBar() {
             onClick={() => setShowNotifications((v) => !v)}
           >
             <Bell className="h-4 w-4" />
-            {hasUnread && (
+            {hasUnread && unreadNotifications.length > 0 && (
               <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-primary animate-pulse" />
             )}
           </Button>
@@ -215,8 +288,8 @@ export function TopBar() {
                 <div className="flex items-center gap-2">
                   <Bell className="h-4 w-4 text-primary" />
                   <span className="text-sm font-semibold">Notifications</span>
-                  {visibleNotifications.length > 0 && (
-                    <Badge className="h-5 text-xs px-1.5">{visibleNotifications.length}</Badge>
+                  {unreadNotifications.length > 0 && (
+                    <Badge className="h-5 text-xs px-1.5">{unreadNotifications.length}</Badge>
                   )}
                 </div>
                 <button
@@ -228,42 +301,48 @@ export function TopBar() {
               </div>
 
               <div className="max-h-80 overflow-y-auto divide-y divide-border/50">
-                {visibleNotifications.length === 0 ? (
+                {allNotifications.length === 0 && !tipLoading ? (
                   <div className="px-4 py-8 text-center">
                     <Bell className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
                     <p className="text-sm text-muted-foreground">All caught up!</p>
                   </div>
                 ) : (
-                  visibleNotifications.map((n) => (
-                    <div
-                      key={n.id}
-                      className={`px-4 py-3 flex items-start gap-3 hover:bg-muted/30 transition-colors ${
-                        n.urgent ? "bg-primary/5" : ""
-                      }`}
-                    >
-                      <div className={`h-2 w-2 rounded-full mt-1.5 shrink-0 ${n.color.replace("text-", "bg-")}`} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium leading-snug">{n.title}</p>
-                        <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{n.body}</p>
+                  <>
+                    {tipLoading && dailyTip === null && (
+                      <div className="px-4 py-3 text-xs text-muted-foreground animate-pulse">
+                        Generating your personalized tip...
                       </div>
-                      <button
-                        onClick={() => setDismissed((d) => new Set([...d, n.id]))}
-                        className="text-muted-foreground/50 hover:text-muted-foreground shrink-0"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </div>
-                  ))
+                    )}
+                    {allNotifications.map((n) => {
+                      const isRead = readIds.has(n.id);
+                      return (
+                        <div
+                          key={n.id}
+                          onClick={() => markRead(n.id)}
+                          className={`px-4 py-3 flex items-start gap-3 hover:bg-muted/30 transition-colors cursor-pointer ${
+                            n.urgent && !isRead ? "bg-primary/5" : ""
+                          }`}
+                        >
+                          <div className={`h-2 w-2 rounded-full mt-1.5 shrink-0 ${
+                            isRead ? "bg-muted-foreground/20" : n.color.replace("text-", "bg-")
+                          }`} />
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-xs font-medium leading-snug ${isRead ? "text-muted-foreground" : ""}`}>
+                              {n.title}
+                            </p>
+                            <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{n.body}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </>
                 )}
               </div>
 
-              {visibleNotifications.length > 0 && (
+              {unreadNotifications.length > 0 && (
                 <div className="px-4 py-2 border-t">
                   <button
-                    onClick={() => {
-                      setDismissed(new Set(allNotifications.map((n) => n.id)));
-                      setShowNotifications(false);
-                    }}
+                    onClick={markAllRead}
                     className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
                   >
                     Mark all as read <ChevronRight className="h-3 w-3" />
@@ -277,6 +356,8 @@ export function TopBar() {
     </header>
   );
 }
+
+// ─── CountdownPill ────────────────────────────────────────────────────────────
 
 function CountdownPill({
   label,

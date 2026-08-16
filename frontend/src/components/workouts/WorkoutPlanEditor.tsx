@@ -18,6 +18,7 @@ import {
   defaultSets,
   renumberSets,
   weightColumnLabel,
+  loadIndicatorText,
 } from "@/lib/workoutPlan";
 import { ALL_DB_MUSCLES } from "@/lib/workoutMuscles";
 
@@ -458,6 +459,11 @@ export function WorkoutPlanEditor({
                   <CardTitle className="text-sm font-semibold flex items-center gap-2">
                     <Dumbbell className="h-4 w-4 shrink-0 text-muted-foreground" />
                     {ex.name}
+                    {loadIndicatorText(ex) && (
+                      <span className="text-[9px] text-muted-foreground font-normal bg-muted/50 px-1.5 py-0.5 rounded">
+                        {loadIndicatorText(ex)}
+                      </span>
+                    )}
                   </CardTitle>
                   <div className="flex gap-1 mt-1 flex-wrap">
                     <Badge variant="outline" className="text-[9px] capitalize">

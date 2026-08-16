@@ -7,6 +7,7 @@ Endpoints:
 - GET  /workouts/sessions/today    — today's sessions
 - GET  /workouts/sessions/history  — recent session history
 - POST /workouts/sessions          — create a new session
+- PATCH /workouts/sessions/:id     — move a session to another date
 - POST /workouts/sessions/generate — create session with personalized exercises
 - POST /workouts/sessions/:id/start    — mark session started
 - POST /workouts/sessions/:id/complete — complete session + log all sets
@@ -147,6 +148,10 @@ class WorkoutSetActual(BaseModel):
     set_number: int = Field(ge=1, le=20)
     actual_weight_kg: float = Field(ge=0, le=500)
     actual_reps: int = Field(ge=1, le=100)
+
+
+class UpdateSessionRequest(BaseModel):
+    scheduled_date: date
 
 
 class SaveWorkoutRequest(BaseModel):
@@ -1048,6 +1053,52 @@ async def delete_session(
     await db.commit()
     logger.info("Deleted workout session", session_id=session_id, user_id=current_user.sub)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.patch("/sessions/{session_id}")
+async def update_session(
+    session_id: str,
+    request: UpdateSessionRequest,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Move an existing workout to a different date. Set data is left unchanged."""
+    user = await _get_user(current_user.sub, db)
+    today = _user_today(user)
+
+    if request.scheduled_date > today:
+        raise HTTPException(status_code=400, detail="Cannot move workouts to future dates")
+
+    result = await db.execute(
+        select(WorkoutSession).where(
+            WorkoutSession.id == uuid.UUID(session_id),
+            WorkoutSession.user_id == user.id,
+        )
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    old_date = session.scheduled_date
+    session.scheduled_date = request.scheduled_date
+    await db.commit()
+
+    logger.info(
+        "Workout date updated",
+        session_id=session_id,
+        user_id=current_user.sub,
+        from_date=old_date.isoformat(),
+        to_date=request.scheduled_date.isoformat(),
+    )
+
+    return {
+        "id": str(session.id),
+        "session_name": session.session_name,
+        "scheduled_date": session.scheduled_date.isoformat(),
+        "date": session.scheduled_date.isoformat(),
+        "status": session.status,
+        "muscle_groups": session.muscle_groups_targeted,
+    }
 
 
 @router.post("/sessions/{session_id}/start")

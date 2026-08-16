@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import {
   UtensilsCrossed, Plus, Search, X, ChevronDown,
-  Flame, Beef, Wheat, Droplet, Loader2, CheckCircle2, Trash2,
+  Flame, Beef, Wheat, Droplet, Loader2, CheckCircle2, Trash2, CalendarDays,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiClient } from "@/services/api";
@@ -34,6 +34,10 @@ interface MealItem {
   id: string;
   food_name: string;
   quantity_g: number;
+  quantity_display?: number;
+  unit_type?: "nos" | "grams" | "ml";
+  display_unit?: string;
+  weight_per_unit_g?: number | null;
   calories: number;
   protein_g: number;
   carbs_g: number;
@@ -65,6 +69,9 @@ interface FoodResult {
   is_vegan: boolean;
   is_custom?: boolean;
   tags: string[];
+  unit_type?: "nos" | "grams" | "ml";
+  display_unit?: string;
+  weight_per_unit_g?: number | null;
 }
 
 interface DayData {
@@ -84,6 +91,48 @@ const MEAL_TYPES = [
   { key: "dinner", label: "Dinner", emoji: "🌙" },
   { key: "post_workout", label: "Post-Workout", emoji: "💪" },
 ];
+
+type QtyUnit = "grams" | "nos";
+
+const COUNTABLE_NAME_HINTS = [
+  "egg", "roti", "chapati", "paratha", "naan", "puri", "bread",
+  "burger", "sandwich", "samosa", "dosa", "idli", "vada", "bada",
+  "banana", "apple", "orange", "mango", "momos", "momo", "biscuit",
+];
+
+function guessUnit(name: string): QtyUnit {
+  const n = name.trim().toLowerCase();
+  if (!n) return "grams";
+  return COUNTABLE_NAME_HINTS.some((h) => n.includes(h)) ? "nos" : "grams";
+}
+
+function UnitToggle({
+  value,
+  onChange,
+}: {
+  value: QtyUnit;
+  onChange: (unit: QtyUnit) => void;
+}) {
+  return (
+    <div className="inline-flex rounded-md border overflow-hidden">
+      {(["grams", "nos"] as QtyUnit[]).map((unit) => (
+        <button
+          key={unit}
+          type="button"
+          onClick={() => onChange(unit)}
+          className={cn(
+            "px-3 py-1.5 text-xs font-medium capitalize",
+            value === unit
+              ? "bg-primary text-primary-foreground"
+              : "bg-background text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {unit === "grams" ? "grams" : "nos"}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 // ─── Macro Ring ─────────────────────────────────────────────────────────────
 
@@ -194,6 +243,7 @@ function FoodSearchPanel({
   const [loadingMyFoods, setLoadingMyFoods] = useState(true);
   const [selected, setSelected] = useState<FoodResult | null>(null);
   const [quantity, setQuantity] = useState("100");
+  const [selectedUnit, setSelectedUnit] = useState<QtyUnit>("grams");
   const [adding, setAdding] = useState(false);
   const [manual, setManual] = useState({
     name: "",
@@ -203,6 +253,7 @@ function FoodSearchPanel({
     carbs_g: "",
     fat_g: "",
   });
+  const [manualUnit, setManualUnit] = useState<QtyUnit>("grams");
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { inputRef.current?.focus(); }, [mode]);
@@ -244,15 +295,27 @@ function FoodSearchPanel({
 
   const selectFood = (f: FoodResult) => {
     setSelected(f);
-    if (f.serving_size_g) setQuantity(f.serving_size_g.toString());
+    const unit: QtyUnit = f.unit_type === "nos" ? "nos" : "grams";
+    setSelectedUnit(unit);
+    if (unit === "nos") {
+      setQuantity("1");
+    } else if (f.serving_size_g) {
+      setQuantity(f.serving_size_g.toString());
+    } else {
+      setQuantity("100");
+    }
   };
 
   const openManual = (name?: string) => {
+    const foodName = name ?? query.trim();
+    const unit = guessUnit(foodName);
     setMode("manual");
     setManual((prev) => ({
       ...prev,
-      name: name ?? query.trim(),
+      name: foodName,
+      quantity_g: unit === "nos" ? "1" : prev.quantity_g || "100",
     }));
+    setManualUnit(unit);
     setSelected(null);
   };
 
@@ -260,10 +323,17 @@ function FoodSearchPanel({
     if (!selected || !quantity) return;
     setAdding(true);
     try {
+      const qtyNum = parseFloat(quantity);
+      const perUnit = selected.weight_per_unit_g || selected.serving_size_g || 50;
+      const isUnit = selectedUnit === "nos";
+      const gramsForApi = isUnit ? qtyNum * perUnit : qtyNum;
       const res = await apiClient.post(`/api/v1/nutrition/meals/${mealId}/items`, {
         food_id: selected.id,
         food_name: selected.name,
-        quantity_g: parseFloat(quantity),
+        quantity_g: gramsForApi,
+        unit_type: selectedUnit,
+        quantity_units: isUnit ? qtyNum : undefined,
+        weight_per_unit_g: isUnit ? perUnit : undefined,
       });
       toast.success(`Added ${selected.name} — ${res.data.protein_g}g protein`);
       onAdded();
@@ -271,6 +341,7 @@ function FoodSearchPanel({
       setQuery("");
       setResults([]);
       setQuantity("100");
+      setSelectedUnit("grams");
     } catch {
       toast.error("Failed to add food.");
     } finally {
@@ -290,8 +361,8 @@ function FoodSearchPanel({
       toast.error("Enter a food name.");
       return;
     }
-    if (!qty || qty < 1) {
-      toast.error("Enter portion weight in grams (e.g. 150 for half a sandwich), not servings.");
+    if (!qty || qty <= 0) {
+      toast.error(manualUnit === "nos" ? "Enter how many pieces (nos)." : "Enter portion weight in grams.");
       return;
     }
     if (Number.isNaN(calories) || Number.isNaN(protein)) {
@@ -304,6 +375,8 @@ function FoodSearchPanel({
       const res = await apiClient.post(`/api/v1/nutrition/meals/${mealId}/items`, {
         food_name: name,
         quantity_g: qty,
+        unit_type: manualUnit,
+        quantity_units: manualUnit === "nos" ? qty : undefined,
         calories_override: calories,
         protein_override: protein,
         carbs_override: carbs,
@@ -314,6 +387,7 @@ function FoodSearchPanel({
       onAdded();
       setMode("search");
       setManual({ name: "", quantity_g: "100", calories: "", protein_g: "", carbs_g: "", fat_g: "" });
+      setManualUnit("grams");
       setQuery("");
       setResults([]);
     } catch (err) {
@@ -324,12 +398,14 @@ function FoodSearchPanel({
     }
   };
 
-  const qtyNum = parseFloat(quantity) || 100;
+  const qtyNum = parseFloat(quantity) || (selectedUnit === "nos" ? 1 : 100);
+  const selectedPerUnit = selected?.weight_per_unit_g || selected?.serving_size_g || 50;
+  const gramsForCalc = selectedUnit === "nos" ? qtyNum * selectedPerUnit : qtyNum;
   const preview = selected ? {
-    calories: Math.round(selected.calories_per_100g * qtyNum / 100),
-    protein: Math.round(selected.protein_g * qtyNum / 100 * 10) / 10,
-    carbs: Math.round(selected.carbs_g * qtyNum / 100 * 10) / 10,
-    fat: Math.round(selected.fat_g * qtyNum / 100 * 10) / 10,
+    calories: Math.round(selected.calories_per_100g * gramsForCalc / 100),
+    protein: Math.round(selected.protein_g * gramsForCalc / 100 * 10) / 10,
+    carbs: Math.round(selected.carbs_g * gramsForCalc / 100 * 10) / 10,
+    fat: Math.round(selected.fat_g * gramsForCalc / 100 * 10) / 10,
   } : null;
 
   return (
@@ -349,20 +425,37 @@ function FoodSearchPanel({
             <label className="text-xs text-muted-foreground">Food name</label>
             <Input
               value={manual.name}
-              onChange={(e) => setManual({ ...manual, name: e.target.value })}
+              onChange={(e) => {
+                const name = e.target.value;
+                setManual({ ...manual, name });
+              }}
               placeholder="e.g. restaurant biryani, homemade paratha"
               className="mt-1"
             />
           </div>
           <div>
-            <label className="text-xs text-muted-foreground">Portion weight (grams)</label>
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-xs text-muted-foreground">
+                {manualUnit === "nos" ? "Quantity (nos)" : "Portion weight (grams)"}
+              </label>
+              <UnitToggle
+                value={manualUnit}
+                onChange={(unit) => {
+                  setManualUnit(unit);
+                  setManual((prev) => ({
+                    ...prev,
+                    quantity_g: unit === "nos" ? "1" : prev.quantity_g === "1" ? "100" : prev.quantity_g,
+                  }));
+                }}
+              />
+            </div>
             <Input
               type="number"
-              min={1}
-              step={1}
+              min={manualUnit === "nos" ? 1 : 1}
+              step={manualUnit === "nos" ? 1 : 1}
               value={manual.quantity_g}
               onChange={(e) => setManual({ ...manual, quantity_g: e.target.value })}
-              placeholder="e.g. 150"
+              placeholder={manualUnit === "nos" ? "e.g. 2" : "e.g. 150"}
               className="mt-1"
             />
           </div>
@@ -409,8 +502,9 @@ function FoodSearchPanel({
             </div>
           </div>
           <p className="text-[11px] text-muted-foreground">
-            Enter macros for this portion weight (not per 100g). Example: half sandwich ≈ 120–180g,
-            450 kcal, 15g protein.
+            {manualUnit === "nos"
+              ? "Enter macros for this many pieces. Example: 1 aloo bada ≈ 180 kcal, 4g protein."
+              : "Enter macros for this portion weight (not per 100g). Example: half sandwich ≈ 120–180g, 450 kcal, 15g protein."}
           </p>
           <div className="flex gap-2">
             <Button onClick={addManualFood} disabled={adding} className="flex-1">
@@ -532,15 +626,36 @@ function FoodSearchPanel({
           </div>
 
           <div>
-            <label className="text-xs text-muted-foreground">Quantity (grams)</label>
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-xs text-muted-foreground">
+                {selectedUnit === "nos"
+                  ? "Quantity (nos)"
+                  : selected.unit_type === "ml"
+                    ? "Quantity (ml)"
+                    : "Quantity (grams)"}
+              </label>
+              <UnitToggle
+                value={selectedUnit}
+                onChange={(unit) => {
+                  setSelectedUnit(unit);
+                  setQuantity(unit === "nos" ? "1" : (selected.serving_size_g?.toString() || "100"));
+                }}
+              />
+            </div>
             <div className="flex gap-2 mt-1">
               <Input
                 type="number"
                 value={quantity}
                 onChange={(e) => setQuantity(e.target.value)}
                 className="font-mono text-lg font-bold"
+                min={selectedUnit === "nos" ? 1 : 10}
+                step={selectedUnit === "nos" ? 1 : 10}
               />
-              {selected.serving_size_g && (
+              {selectedUnit === "nos" ? (
+                <div className="flex items-center text-xs text-muted-foreground whitespace-nowrap px-2 border rounded-md bg-muted/30">
+                  ≈ {Math.round((parseFloat(quantity) || 1) * selectedPerUnit)}g
+                </div>
+              ) : selected.serving_size_g ? (
                 <Button
                   variant="outline"
                   size="sm"
@@ -549,7 +664,7 @@ function FoodSearchPanel({
                 >
                   1 serving ({selected.serving_size_g}g)
                 </Button>
-              )}
+              ) : null}
             </div>
           </div>
 
@@ -589,11 +704,13 @@ function FoodSearchPanel({
 function MealCard({
   meal,
   onUpdate,
+  onMoved,
   autoOpenSearch = false,
   onSearchClose,
 }: {
   meal: Meal;
   onUpdate: () => void;
+  onMoved?: (newDate: string) => void;
   autoOpenSearch?: boolean;
   onSearchClose?: () => void;
 }) {
@@ -601,6 +718,7 @@ function MealCard({
   const [expanded, setExpanded] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [savingDate, setSavingDate] = useState(false);
 
   useEffect(() => {
     if (autoOpenSearch) {
@@ -625,6 +743,31 @@ function MealCard({
       toast.error("Failed to delete meal.");
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleDateChange = async (nextDate: string) => {
+    if (!nextDate || nextDate === meal.meal_date) return;
+    if (nextDate > todayStr()) {
+      toast.error("Cannot move meals to a future date.");
+      return;
+    }
+    setSavingDate(true);
+    try {
+      await apiClient.patch(`/api/v1/nutrition/meals/${meal.id}`, {
+        meal_date: nextDate,
+      });
+      toast.success(`Moved to ${format(parseISO(nextDate), "MMM d, yyyy")}`);
+      if (onMoved) {
+        onMoved(nextDate);
+      } else {
+        onUpdate();
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to change meal date.";
+      toast.error(msg);
+    } finally {
+      setSavingDate(false);
     }
   };
 
@@ -660,7 +803,13 @@ function MealCard({
               <div key={item.id} className="flex items-center justify-between text-sm rounded-lg bg-muted/20 px-3 py-2">
                 <span>{item.food_name}</span>
                 <div className="flex items-center gap-3 text-muted-foreground text-xs">
-                  <span>{item.quantity_g}g</span>
+                  <span>
+                    {item.unit_type === "nos" && item.quantity_display != null
+                      ? `${item.quantity_display} nos`
+                      : item.unit_type === "ml"
+                        ? `${item.quantity_g} ml`
+                        : `${item.quantity_g}g`}
+                  </span>
                   <span className="font-medium text-red-400">{item.protein_g}g P</span>
                   <span>{Math.round(item.calories)} kcal</span>
                 </div>
@@ -674,10 +823,21 @@ function MealCard({
                 onClose={closeSearch}
               />
             ) : (
-              <div className="flex gap-2 pt-1">
+              <div className="flex flex-wrap gap-2 pt-1">
                 <Button variant="outline" size="sm" className="flex-1" onClick={() => setShowSearch(true)}>
                   <Plus className="h-3.5 w-3.5 mr-1" /> Add Food
                 </Button>
+                <label className="flex items-center gap-1.5 rounded-md border px-2 h-8 text-xs text-muted-foreground">
+                  <CalendarDays className="h-3.5 w-3.5 shrink-0" />
+                  <Input
+                    type="date"
+                    max={todayStr()}
+                    value={meal.meal_date}
+                    disabled={savingDate}
+                    onChange={(e) => handleDateChange(e.target.value)}
+                    className="h-7 w-[9.5rem] border-0 bg-transparent px-0 text-xs shadow-none focus-visible:ring-0"
+                  />
+                </label>
                 <Button variant="ghost" size="sm" onClick={handleDelete} disabled={deleting} className="text-destructive hover:text-destructive">
                   {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                 </Button>
@@ -858,6 +1018,7 @@ export default function NutritionPage() {
               key={meal.id}
               meal={meal}
               onUpdate={loadData}
+              onMoved={(date) => setSelectedDate(date)}
               autoOpenSearch={searchMealId === meal.id}
               onSearchClose={() => setSearchMealId(null)}
             />

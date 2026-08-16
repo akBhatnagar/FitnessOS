@@ -10,7 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import {
   Dumbbell, Play, CheckCircle2, Clock, ChevronRight,
   Search, Plus, Zap, TrendingUp, BarChart3, RotateCcw,
-  Trophy, Target, AlertCircle, Loader2, Moon, Trash2,
+  Trophy, Target, AlertCircle, Loader2, Moon, Trash2, CalendarDays,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiClient } from "@/services/api";
@@ -39,6 +39,7 @@ interface Session {
   id: string;
   session_name: string;
   scheduled_date: string;
+  date?: string;
   status: string;
   muscle_groups: string[];
   duration_minutes: number | null;
@@ -544,6 +545,7 @@ export default function WorkoutsPage() {
   const [planEditor, setPlanEditor] = useState<PlanEditorConfig | null>(null);
   const [workoutExecution, setWorkoutExecution] = useState<WorkoutExecutionState | null>(null);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
+  const [movingSessionId, setMovingSessionId] = useState<string | null>(null);
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
   const [customExerciseOpen, setCustomExerciseOpen] = useState(false);
   const [customExerciseName, setCustomExerciseName] = useState("");
@@ -872,6 +874,28 @@ export default function WorkoutsPage() {
       toast.error("Failed to remove session.");
     } finally {
       setDeletingSessionId(null);
+    }
+  };
+
+  const changeSessionDate = async (session: Session, nextDate: string) => {
+    const current = session.date ?? session.scheduled_date;
+    if (!nextDate || nextDate === current) return;
+    if (nextDate > todayStr()) {
+      toast.error("Cannot move workouts to a future date.");
+      return;
+    }
+    setMovingSessionId(session.id);
+    try {
+      await apiClient.patch(`/api/v1/workouts/sessions/${session.id}`, {
+        scheduled_date: nextDate,
+      });
+      toast.success(`Moved ${session.session_name} to ${format(parseISO(nextDate), "MMM d, yyyy")}`);
+      setSelectedDate(nextDate);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to change workout date.";
+      toast.error(msg);
+    } finally {
+      setMovingSessionId(null);
     }
   };
 
@@ -1415,6 +1439,18 @@ export default function WorkoutsPage() {
                           {s.status === "scheduled" ? "Plan ready · " : ""}{s.sets_logged} sets{s.status === "scheduled" ? " planned" : " logged"}
                         </p>
                       ) : null}
+                      <label className="mt-2 inline-flex items-center gap-1.5 rounded-md border px-2 h-8 text-xs text-muted-foreground">
+                        <CalendarDays className="h-3.5 w-3.5 shrink-0" />
+                        <Input
+                          type="date"
+                          max={todayStr()}
+                          value={s.date ?? s.scheduled_date}
+                          disabled={movingSessionId === s.id}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => changeSessionDate(s, e.target.value)}
+                          className="h-7 w-[9.5rem] border-0 bg-transparent px-0 text-xs shadow-none focus-visible:ring-0"
+                        />
+                      </label>
                     </div>
                     <div className="flex flex-col items-end gap-2 shrink-0">
                       {confirming ? (

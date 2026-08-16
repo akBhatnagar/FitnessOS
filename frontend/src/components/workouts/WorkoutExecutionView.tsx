@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { apiClient } from "@/services/api";
 import { toast } from "sonner";
-import { PlanExercise, computeSummary, weightColumnLabel } from "@/lib/workoutPlan";
+import { PlanExercise, computeSummary, weightColumnLabel, loadIndicatorText } from "@/lib/workoutPlan";
 
 interface SessionInfo {
   id: string;
@@ -189,6 +189,11 @@ export function WorkoutExecutionView({
                 <CardTitle className="text-sm font-semibold flex items-center gap-2">
                   <Dumbbell className="h-4 w-4 text-muted-foreground" />
                   {ex.name}
+                  {loadIndicatorText(ex) && (
+                    <span className="text-[9px] text-muted-foreground font-normal bg-muted/50 px-1.5 py-0.5 rounded">
+                      {loadIndicatorText(ex)}
+                    </span>
+                  )}
                   <Badge variant="outline" className="text-[9px] ml-auto">{rows.length} sets</Badge>
                 </CardTitle>
               </CardHeader>
