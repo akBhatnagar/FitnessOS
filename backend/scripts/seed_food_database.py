@@ -9,8 +9,10 @@ NIN (National Institute of Nutrition) India.
 
 Run with:
     .venv/bin/python scripts/seed_food_database.py
+    .venv/bin/python scripts/seed_food_database.py --update-catalog
 """
 
+import argparse
 import asyncio
 from uuid import uuid4
 
@@ -45,7 +47,7 @@ FOODS = [
     ("Lassi (plain)", 65, 3.0, 8.0, 2.0, 0, 8.0, 300, "1 glass (300ml)", ["dairy","beverage"], True, False),
     ("Chaas / Buttermilk", 23, 1.0, 2.5, 0.9, 0, 2.5, 300, "1 glass", ["dairy","beverage","low_calorie"], True, False),
     ("Egg (whole, boiled)", 155, 13.0, 1.1, 11.0, 0, 1.0, 50, "1 medium egg (50g)", ["egg","high_protein"], True, False),
-    ("Egg white (boiled)", 52, 11.0, 0.7, 0.2, 0, 0.7, 50, "2 egg whites", ["egg","high_protein","low_fat"], True, False),
+    ("Egg white (boiled)", 52, 11.0, 0.7, 0.2, 0, 0.7, 33, "1 egg white", ["egg","high_protein","low_fat"], True, False),
     ("Egg omelette (2 eggs)", 190, 14.0, 1.5, 14.0, 0, 1.0, 100, "1 omelette", ["egg","high_protein"], True, False),
     ("Protein bar (Quest-type)", 370, 29.0, 22.0, 12.0, 14.0, 4.0, 60, "1 bar (60g)", ["supplement","snack"], True, False),
 
@@ -66,7 +68,7 @@ FOODS = [
     ("Peas (green, boiled)", 84, 5.4, 15.6, 0.4, 5.5, 5.7, 100, "100g", ["legume","vegan"], True, True),
     ("Edamame (boiled)", 121, 11.9, 8.9, 5.2, 5.2, 0, 100, "100g", ["legume","high_protein","vegan"], True, True),
     ("Hummus", 166, 7.9, 14.3, 9.6, 6.0, 0.5, 50, "2 tbsp (50g)", ["legume","snack","vegan"], True, True),
-    ("Besan / Chickpea flour (raw)", 333, 22.0, 57.8, 6.7, 10.8, 0, 100, "100g", ["legume","flour","vegan"], True, True),
+    ("Besan / Chickpea flour (raw)", 387, 22, 57.8, 6.7, 10.8, 0, 100, "100g", ["legume","flour","vegan"], True, True),
 
     # ════════════════════════════════════════════════════════════
     # GRAINS & CEREALS
@@ -74,11 +76,11 @@ FOODS = [
     ("Basmati rice (cooked)", 130, 2.7, 28.2, 0.3, 0.4, 0, 150, "1 katori (150g)", ["grain","carb_source","vegan"], True, True),
     ("Brown rice (cooked)", 123, 2.7, 25.6, 0.9, 1.8, 0, 150, "1 katori", ["grain","complex_carb","vegan"], True, True),
     ("Quinoa (cooked)", 120, 4.4, 21.3, 1.9, 2.8, 0, 150, "1 katori", ["grain","complete_protein","vegan"], True, True),
-    ("Roti / Chapati (wheat)", 104, 3.1, 21.9, 0.9, 2.7, 0, 40, "1 medium roti", ["grain","carb_source","vegan"], True, True),
-    ("Multigrain roti", 98, 3.5, 20.0, 1.2, 3.5, 0, 40, "1 roti", ["grain","complex_carb","vegan"], True, True),
+    ("Roti / Chapati (wheat)", 297, 9.0, 64, 3.0, 8.0, 0, 40, "1 medium roti", ["grain","carb_source","vegan"], True, True),
+    ("Multigrain roti", 250, 8.8, 50, 3.0, 8.0, 0, 40, "1 roti", ["grain","complex_carb","vegan"], True, True),
     ("Paratha (plain)", 260, 4.5, 34.0, 11.0, 2.5, 0, 80, "1 paratha", ["grain","carb_source"], True, False),
     ("Aloo paratha", 300, 5.0, 42.0, 12.0, 3.0, 0, 100, "1 paratha", ["grain","carb_source"], True, False),
-    ("Phulka", 80, 2.5, 17.0, 0.5, 2.0, 0, 35, "1 phulka", ["grain","low_fat","vegan"], True, True),
+    ("Phulka", 286, 8.0, 60, 2.0, 7.0, 0, 35, "1 phulka", ["grain","low_fat","vegan"], True, True),
     ("Whole wheat bread", 247, 8.8, 47.1, 2.9, 6.9, 4.7, 30, "1 slice", ["grain","vegan"], True, True),
     ("Brown bread", 240, 9.0, 46.0, 3.0, 7.0, 4.0, 30, "1 slice", ["grain","vegan"], True, True),
     ("White bread", 265, 8.9, 51.0, 2.7, 2.7, 5.0, 30, "1 slice", ["grain","vegan"], True, True),
@@ -86,7 +88,7 @@ FOODS = [
     ("Oatmeal with milk", 100, 5.0, 17.0, 2.0, 1.5, 5.0, 250, "1 bowl", ["grain","breakfast"], True, False),
     ("Poha / Flattened rice", 130, 2.0, 28.0, 1.0, 0.5, 0, 150, "1 plate (150g)", ["grain","breakfast","vegan"], True, True),
     ("Upma (semolina)", 180, 4.5, 28.0, 5.5, 2.0, 0, 200, "1 plate", ["grain","breakfast","vegan"], True, True),
-    ("Idli (steamed)", 39, 2.0, 8.0, 0.2, 0.5, 0, 40, "1 idli (40g)", ["grain","breakfast","low_calorie","vegan"], True, True),
+    ("Idli (steamed)", 135, 4.9, 26.1, 1.0, 1.5, 0, 40, "1 idli (40g)", ["grain","breakfast","low_calorie","vegan"], True, True),
     ("Dosa (plain)", 168, 3.9, 30.0, 3.7, 1.0, 0, 100, "1 medium dosa", ["grain","breakfast","vegan"], True, True),
     ("Masala dosa", 230, 4.5, 38.0, 7.0, 2.0, 0, 150, "1 dosa", ["grain","breakfast"], True, False),
     ("Uttapam", 180, 5.0, 30.0, 5.0, 2.0, 0, 150, "1 medium", ["grain","breakfast","vegan"], True, True),
@@ -160,35 +162,35 @@ FOODS = [
     # ════════════════════════════════════════════════════════════
     # COMMON INDIAN MEALS & DISHES
     # ════════════════════════════════════════════════════════════
-    ("Dal makhani", 180, 9.0, 18.0, 8.0, 6.0, 0, 200, "1 bowl (200g)", ["legume","meal","restaurant"], True, False),
-    ("Rajma chawal (meal)", 380, 14.0, 65.0, 5.0, 9.0, 0, 350, "1 full plate", ["legume","meal","vegan"], True, True),
-    ("Chole bhature (1 plate)", 650, 17.0, 95.0, 22.0, 9.0, 0, 300, "1 plate", ["legume","meal","street_food"], True, False),
-    ("Paneer tikka (grilled)", 225, 14.0, 6.0, 16.0, 1.0, 0, 150, "6-8 pieces (150g)", ["dairy","high_protein","restaurant"], True, False),
-    ("Paneer bhurji", 240, 15.0, 5.0, 18.0, 1.0, 0, 150, "1 serving (150g)", ["dairy","high_protein","meal"], True, False),
-    ("Matar paneer", 210, 12.0, 13.0, 13.0, 3.0, 0, 200, "1 bowl", ["dairy","meal"], True, False),
-    ("Shahi paneer", 280, 13.0, 12.0, 21.0, 1.0, 0, 200, "1 bowl", ["dairy","meal","restaurant"], True, False),
-    ("Kadai paneer", 250, 13.0, 10.0, 19.0, 2.0, 0, 200, "1 bowl", ["dairy","meal","restaurant"], True, False),
-    ("Daal tadka (restaurant)", 140, 7.0, 20.0, 4.0, 5.0, 0, 200, "1 bowl", ["legume","meal","restaurant","vegan"], True, True),
+    ("Dal makhani", 150, 7.0, 16.0, 6.0, 5.0, 0, 200, "1 bowl (200g)", ["legume","meal","restaurant"], True, False),
+    ("Rajma chawal (meal)", 180, 6.5, 32, 2.5, 4.5, 0, 350, "1 full plate", ["legume","meal","vegan"], True, True),
+    ("Chole bhature (1 plate)", 217, 5.7, 31.7, 7.3, 3.0, 0, 300, "1 plate", ["legume","meal","street_food"], True, False),
+    ("Paneer tikka (grilled)", 250, 15.0, 5.0, 20, 1.0, 0, 150, "6-8 pieces (150g)", ["dairy","high_protein","restaurant"], True, False),
+    ("Paneer bhurji", 250, 14.0, 4.0, 20, 1.0, 0, 150, "1 serving (150g)", ["dairy","high_protein","meal"], True, False),
+    ("Matar paneer", 200, 10.0, 12.0, 14.0, 3.0, 0, 200, "1 bowl", ["dairy","meal"], True, False),
+    ("Shahi paneer", 250, 12.0, 10.0, 18.0, 1.0, 0, 200, "1 bowl", ["dairy","meal","restaurant"], True, False),
+    ("Kadai paneer", 240, 12.0, 9.0, 17.0, 2.0, 0, 200, "1 bowl", ["dairy","meal","restaurant"], True, False),
+    ("Daal tadka (restaurant)", 130, 6.0, 18.0, 3.0, 4.0, 0, 200, "1 bowl", ["legume","meal","restaurant","vegan"], True, True),
     ("Sambar (homemade)", 80, 4.5, 12.0, 2.0, 4.0, 0, 200, "1 bowl", ["legume","meal","vegan"], True, True),
     ("Rasam", 30, 1.5, 5.0, 0.5, 1.0, 0, 200, "1 bowl", ["meal","low_calorie","vegan"], True, True),
-    ("Vegetable khichdi", 180, 6.5, 32.0, 3.0, 4.0, 0, 300, "1 plate (300g)", ["grain","legume","meal","vegan"], True, True),
-    ("Moong dal khichdi", 165, 8.0, 28.0, 2.5, 4.5, 0, 300, "1 plate", ["grain","legume","meal","vegan"], True, True),
-    ("Vegetable biryani", 330, 7.0, 58.0, 7.5, 3.0, 0, 300, "1 plate", ["grain","meal","restaurant"], True, False),
-    ("Dahi vada", 195, 7.5, 28.0, 6.0, 3.0, 5.0, 200, "2 pieces + dahi", ["snack","street_food"], True, False),
+    ("Vegetable khichdi", 130, 4.5, 25, 2.0, 3.0, 0, 300, "1 plate (300g)", ["grain","legume","meal","vegan"], True, True),
+    ("Moong dal khichdi", 120, 5.0, 20, 1.5, 3.0, 0, 300, "1 plate", ["grain","legume","meal","vegan"], True, True),
+    ("Vegetable biryani", 180, 4.0, 32, 4.0, 2.0, 0, 300, "1 plate", ["grain","meal","restaurant"], True, False),
+    ("Dahi vada", 150, 6.0, 22, 5.0, 2.0, 4.0, 200, "2 pieces + dahi", ["snack","street_food"], True, False),
     ("Sev puri", 220, 5.0, 35.0, 8.0, 2.0, 0, 100, "4-5 pieces", ["snack","street_food"], True, False),
     ("Pani puri (6 pcs)", 180, 4.0, 30.0, 5.0, 2.5, 0, 120, "6 pieces", ["snack","street_food","vegan"], True, True),
     ("Bhel puri", 170, 4.5, 30.0, 4.5, 3.0, 0, 150, "1 plate", ["snack","street_food","vegan"], True, True),
-    ("Samosa (1 piece)", 262, 4.5, 34.0, 12.0, 2.5, 0, 80, "1 medium samosa", ["snack","street_food","vegan"], True, True),
-    ("Vegetable cutlet", 180, 4.0, 28.0, 6.0, 3.0, 0, 80, "1 piece", ["snack","vegan"], True, True),
+    ("Samosa (1 piece)", 320, 6.0, 40, 15.0, 2.5, 0, 80, "1 medium samosa", ["snack","street_food","vegan"], True, True),
+    ("Vegetable cutlet", 250, 5.0, 35, 10.0, 3.0, 0, 80, "1 piece", ["snack","vegan"], True, True),
     ("Corn chaat", 155, 3.5, 28.0, 4.0, 3.5, 4.0, 150, "1 bowl", ["snack","street_food","vegan"], True, True),
 
     # ════════════════════════════════════════════════════════════
     # BEVERAGES & PROTEIN SHAKES
     # ════════════════════════════════════════════════════════════
-    ("Whey protein shake (water)", 115, 24.0, 3.0, 1.5, 0, 2.0, 300, "1 scoop + 300ml water", ["supplement","beverage"], True, False),
-    ("Whey protein shake (milk)", 250, 28.0, 17.0, 5.0, 0, 10.0, 400, "1 scoop + 300ml milk", ["supplement","beverage"], True, False),
-    ("Paneer + milk smoothie", 280, 22.0, 18.0, 12.0, 0, 8.0, 400, "1 glass", ["dairy","beverage","high_protein"], True, False),
-    ("Banana protein shake", 295, 26.0, 35.0, 4.0, 2.0, 18.0, 400, "1 glass", ["supplement","beverage"], True, False),
+    ("Whey protein shake (water)", 38, 8.0, 1.0, 0.5, 0, 0.7, 300, "1 scoop + 300ml water", ["supplement","beverage"], True, False),
+    ("Whey protein shake (milk)", 62, 7.0, 4.3, 1.3, 0, 2.5, 400, "1 scoop + 300ml milk", ["supplement","beverage"], True, False),
+    ("Paneer + milk smoothie", 70, 5.5, 4.5, 3.0, 0, 2.0, 400, "1 glass", ["dairy","beverage","high_protein"], True, False),
+    ("Banana protein shake", 74, 6.5, 8.8, 1.0, 0.5, 4.5, 400, "1 glass", ["supplement","beverage"], True, False),
     ("Green tea", 2, 0, 0.4, 0, 0, 0.2, 250, "1 cup", ["beverage","low_calorie","vegan"], True, True),
     ("Black coffee", 2, 0.3, 0, 0, 0, 0, 240, "1 cup (no sugar)", ["beverage","low_calorie","vegan"], True, True),
     ("Masala chai (no sugar)", 45, 1.5, 6.0, 1.5, 0, 3.0, 150, "1 cup", ["beverage","dairy"], True, False),
@@ -203,23 +205,23 @@ FOODS = [
     ("Nutritional yeast", 327, 50.0, 38.6, 5.4, 26.2, 1.0, 15, "2 tbsp", ["supplement","high_protein","vegan"], True, True),
     ("Greek yogurt + protein", 140, 22.0, 10.0, 2.0, 0, 5.0, 200, "1 cup with 1 scoop protein", ["dairy","high_protein"], True, False),
     ("Paneer scramble (high protein)", 310, 25.0, 6.0, 21.0, 1.0, 0, 200, "200g paneer scrambled", ["dairy","high_protein","meal"], True, False),
-    ("Tofu scramble", 145, 11.5, 5.5, 8.5, 1.5, 1.0, 200, "200g — note: disliked by user", ["legume","high_protein","vegan"], True, True),
+    ("Tofu scramble", 145, 11.5, 5.5, 8.5, 1.5, 1.0, 200, "200g", ["legume","high_protein","vegan"], True, True),
     ("Cottage cheese dip", 100, 12.0, 4.0, 4.0, 0, 3.0, 150, "3 tbsp", ["dairy","high_protein"], True, False),
 
     # ════════════════════════════════════════════════════════════
     # RESTAURANT & TAKEAWAY
     # ════════════════════════════════════════════════════════════
-    ("Veg burger (no mayo)", 340, 11.0, 48.0, 11.0, 3.0, 5.0, 180, "1 burger", ["street_food","restaurant"], True, False),
-    ("Veg pizza (2 slices)", 480, 16.0, 68.0, 16.0, 3.0, 6.0, 200, "2 slices (medium)", ["restaurant","meal"], True, False),
-    ("Veg wrap / frankie", 320, 10.0, 45.0, 11.0, 3.0, 3.0, 180, "1 wrap", ["street_food","meal"], True, False),
-    ("Pav bhaji", 350, 8.0, 55.0, 12.0, 5.0, 0, 250, "2 pav + bhaji", ["street_food","meal","vegan"], True, True),
-    ("Veg sandwich (grilled)", 270, 9.0, 40.0, 8.0, 3.0, 4.0, 150, "1 sandwich", ["meal","snack"], True, False),
-    ("Dal rice (thali)", 500, 16.0, 88.0, 8.0, 8.0, 0, 400, "1 full thali", ["meal","vegan"], True, True),
-    ("South Indian meals", 650, 15.0, 110.0, 15.0, 6.0, 0, 500, "1 full meals plate", ["meal","restaurant"], True, False),
-    ("Veg noodles (hakka)", 350, 8.0, 55.0, 10.0, 3.0, 3.0, 250, "1 plate", ["restaurant","meal"], True, False),
-    ("Palak soup", 80, 3.0, 10.0, 3.0, 2.0, 0, 250, "1 bowl", ["vegetable","meal","low_calorie","vegan"], True, True),
-    ("Tomato soup (cream)", 110, 2.5, 14.0, 5.0, 1.5, 8.0, 250, "1 bowl", ["meal","restaurant"], True, False),
-    ("Veg clear soup", 40, 1.5, 7.0, 0.5, 1.5, 0, 250, "1 bowl", ["meal","low_calorie","vegan"], True, True),
+    ("Veg burger (no mayo)", 189, 6.1, 26.7, 6.1, 1.7, 2.8, 180, "1 burger", ["street_food","restaurant"], True, False),
+    ("Veg pizza (2 slices)", 240, 8.0, 34, 8.0, 1.5, 3.0, 200, "2 slices (medium)", ["restaurant","meal"], True, False),
+    ("Veg wrap / frankie", 178, 5.6, 25, 6.1, 1.7, 1.7, 180, "1 wrap", ["street_food","meal"], True, False),
+    ("Pav bhaji", 140, 3.2, 22, 4.8, 2.0, 0, 250, "2 pav + bhaji", ["street_food","meal","vegan"], True, True),
+    ("Veg sandwich (grilled)", 180, 6.0, 26.7, 5.3, 2.0, 2.7, 150, "1 sandwich", ["meal","snack"], True, False),
+    ("Dal rice (thali)", 125, 4.0, 22, 2.0, 2.0, 0, 400, "1 full thali", ["meal","vegan"], True, True),
+    ("South Indian meals", 130, 3.0, 22, 3.0, 1.2, 0, 500, "1 full meals plate", ["meal","restaurant"], True, False),
+    ("Veg noodles (hakka)", 140, 3.2, 22, 4.0, 1.2, 1.2, 250, "1 plate", ["restaurant","meal"], True, False),
+    ("Palak soup", 32, 1.2, 4.0, 1.2, 0.8, 0, 250, "1 bowl", ["vegetable","meal","low_calorie","vegan"], True, True),
+    ("Tomato soup (cream)", 44, 1.0, 5.6, 2.0, 0.6, 3.2, 250, "1 bowl", ["meal","restaurant"], True, False),
+    ("Veg clear soup", 16, 0.6, 2.8, 0.2, 0.6, 0, 250, "1 bowl", ["meal","low_calorie","vegan"], True, True),
 
     # ════════════════════════════════════════════════════════════
     # CONDIMENTS, FATS & OILS
@@ -237,9 +239,9 @@ FOODS = [
     # ════════════════════════════════════════════════════════════
     # SWEETS & OCCASIONAL TREATS
     # ════════════════════════════════════════════════════════════
-    ("Rasgulla (1 piece)", 107, 1.8, 24.0, 0.2, 0, 24.0, 80, "1 piece", ["sweet","dairy"], True, False),
-    ("Gulab jamun (1 piece)", 175, 2.5, 33.0, 4.5, 0.3, 28.0, 60, "1 piece", ["sweet","dairy"], True, False),
-    ("Kheer", 185, 4.5, 32.0, 5.0, 0.3, 22.0, 200, "1 bowl", ["sweet","dairy"], True, False),
+    ("Rasgulla (1 piece)", 186, 4.0, 45, 0.5, 0, 45, 50, "1 piece", ["sweet","dairy"], True, False),
+    ("Gulab jamun (1 piece)", 300, 5.0, 55, 10.0, 0.5, 45, 50, "1 piece", ["sweet","dairy"], True, False),
+    ("Kheer", 150, 3.0, 25, 4.0, 0.3, 15.0, 200, "1 bowl", ["sweet","dairy"], True, False),
     ("Dark chocolate (85%)", 598, 8.0, 22.0, 52.9, 11.0, 7.0, 20, "2-3 squares (20g)", ["sweet","vegan"], True, True),
     ("Milk chocolate", 535, 7.5, 59.5, 29.7, 3.4, 52.5, 20, "2 squares", ["sweet","dairy"], True, False),
 
@@ -248,10 +250,72 @@ FOODS = [
     # ════════════════════════════════════════════════════════════
     ("Rice cakes (plain)", 383, 7.0, 81.5, 2.8, 1.0, 0.5, 20, "2 cakes (20g each)", ["snack","low_fat","vegan","pre_workout"], True, True),
     ("Banana with peanut butter", 200, 6.5, 26.5, 8.5, 3.0, 13.5, 150, "1 banana + 1 tbsp PB", ["snack","pre_workout","vegan"], True, True),
-    ("Oats + whey + milk (pre-workout)", 380, 35.0, 45.0, 6.0, 4.0, 10.0, 400, "1 bowl", ["breakfast","supplement","pre_workout"], True, False),
-    ("Chocolate milk (post-workout)", 160, 6.5, 26.0, 3.0, 0, 24.0, 300, "1 glass", ["dairy","post_workout"], True, False),
-    ("BCAA drink", 20, 5.0, 0, 0, 0, 0, 300, "1 scoop + water", ["supplement","vegan"], True, True),
+    ("Oats + whey + milk (pre-workout)", 95, 8.8, 11.3, 1.5, 1.0, 2.5, 400, "1 bowl", ["breakfast","supplement","pre_workout"], True, False),
+    ("Chocolate milk (post-workout)", 67, 3.2, 10.5, 1.5, 0, 10.0, 300, "1 glass", ["dairy","post_workout"], True, False),
+    ("BCAA drink", 7, 1.7, 0, 0, 0, 0, 300, "1 scoop + water", ["supplement","vegan"], True, True),
 ]
+
+
+def _food_params(row: tuple) -> dict:
+    (name, cals, protein, carbs, fat, fiber, sugar,
+     serving_g, serving_desc, tags, is_veg, is_vegan) = row
+    return {
+        "name": name,
+        "cals": cals,
+        "protein": protein,
+        "carbs": carbs,
+        "fat": fat,
+        "fiber": fiber,
+        "sugar": sugar,
+        "serving_g": serving_g,
+        "serving_desc": serving_desc,
+        "tags": tags,
+        "is_veg": is_veg,
+        "is_vegan": is_vegan,
+    }
+
+
+async def update_catalog() -> None:
+    """Refresh macros for seeded foods only. Never touches is_user_created rows."""
+    async with AsyncSession(engine) as session:
+        async with session.begin():
+            updated = 0
+            missing = []
+            for row in FOODS:
+                params = _food_params(row)
+                result = await session.execute(text("""
+                    UPDATE food_database SET
+                        calories_per_100g = :cals,
+                        protein_g = :protein,
+                        carbs_g = :carbs,
+                        fat_g = :fat,
+                        fiber_g = :fiber,
+                        sugar_g = :sugar,
+                        serving_size_g = :serving_g,
+                        serving_description = :serving_desc,
+                        updated_at = NOW()
+                    WHERE name = :name AND is_user_created = false
+                """), {
+                    "name": params["name"],
+                    "cals": params["cals"],
+                    "protein": params["protein"],
+                    "carbs": params["carbs"],
+                    "fat": params["fat"],
+                    "fiber": params["fiber"],
+                    "sugar": params["sugar"],
+                    "serving_g": params["serving_g"],
+                    "serving_desc": params["serving_desc"],
+                })
+                if result.rowcount:
+                    updated += result.rowcount
+                else:
+                    missing.append(params["name"])
+
+        print(f"✅  Updated {updated} catalog foods (is_user_created = false)")
+        if missing:
+            print(f"   {len(missing)} seed names not found in DB (left unchanged):")
+            for name in missing:
+                print(f"     - {name}")
 
 
 async def seed_foods() -> None:
@@ -263,13 +327,13 @@ async def seed_foods() -> None:
             existing = count_result.scalar_one()
             if existing > 0:
                 print(f"Food database already has {existing} entries. Skipping.")
+                print("   Use --update-catalog to refresh seeded (non-custom) foods.")
                 return
 
             inserted = 0
             for row in FOODS:
-                (name, cals, protein, carbs, fat, fiber, sugar,
-                 serving_g, serving_desc, tags, is_veg, is_vegan) = row
-
+                params = _food_params(row)
+                params["id"] = str(uuid4())
                 await session.execute(text("""
                     INSERT INTO food_database (
                         id, name, calories_per_100g, protein_g, carbs_g, fat_g,
@@ -282,21 +346,7 @@ async def seed_foods() -> None:
                         :tags, :is_veg, :is_vegan, false, false,
                         NOW(), NOW()
                     )
-                """), {
-                    "id": str(uuid4()),
-                    "name": name,
-                    "cals": cals,
-                    "protein": protein,
-                    "carbs": carbs,
-                    "fat": fat,
-                    "fiber": fiber,
-                    "sugar": sugar,
-                    "serving_g": serving_g,
-                    "serving_desc": serving_desc,
-                    "tags": tags,
-                    "is_veg": is_veg,
-                    "is_vegan": is_vegan,
-                })
+                """), params)
                 inserted += 1
 
         print(f"✅  Seeded {inserted} Indian vegetarian foods into food_database")
@@ -305,4 +355,14 @@ async def seed_foods() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(seed_foods())
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--update-catalog",
+        action="store_true",
+        help="Update seeded foods by name; skip user-created items",
+    )
+    args = parser.parse_args()
+    if args.update_catalog:
+        asyncio.run(update_catalog())
+    else:
+        asyncio.run(seed_foods())
