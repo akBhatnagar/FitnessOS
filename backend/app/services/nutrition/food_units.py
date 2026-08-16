@@ -203,13 +203,19 @@ def classify_food_unit(food_name: str, serving_description: str | None = None, t
     name_words = set(name_lower.split())
     name_words.add(name_lower)
 
-    # Unit keywords take priority over weight keywords when in food name
-    for kw in UNIT_KEYWORDS:
+    # Unit keywords take priority over weight keywords when in food name.
+    # Prefer the longest UNIT_FOODS key actually in the name so
+    # "egg white (boiled)" matches 33g, not the generic "egg" 50g.
+    for kw in sorted(UNIT_KEYWORDS, key=len, reverse=True):
         if kw in name_lower:
-            # Try to find weight per unit from related entries
-            for key, weight in UNIT_FOODS.items():
-                if kw in key:
-                    return "nos", weight
+            in_name = [key for key in UNIT_FOODS if key in name_lower]
+            if in_name:
+                best = max(in_name, key=len)
+                return "nos", UNIT_FOODS[best]
+            related = [key for key in UNIT_FOODS if kw in key]
+            if related:
+                best = max(related, key=len)
+                return "nos", UNIT_FOODS[best]
             return "nos", None
 
     # Weight keywords
