@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import {
   UtensilsCrossed, Plus, Search, X, ChevronDown,
-  Flame, Beef, Wheat, Droplet, Loader2, CheckCircle2, Trash2,
+  Flame, Beef, Wheat, Droplet, Loader2, CheckCircle2, Trash2, CalendarDays,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiClient } from "@/services/api";
@@ -623,11 +623,13 @@ function FoodSearchPanel({
 function MealCard({
   meal,
   onUpdate,
+  onMoved,
   autoOpenSearch = false,
   onSearchClose,
 }: {
   meal: Meal;
   onUpdate: () => void;
+  onMoved?: (newDate: string) => void;
   autoOpenSearch?: boolean;
   onSearchClose?: () => void;
 }) {
@@ -635,6 +637,7 @@ function MealCard({
   const [expanded, setExpanded] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [savingDate, setSavingDate] = useState(false);
 
   useEffect(() => {
     if (autoOpenSearch) {
@@ -659,6 +662,31 @@ function MealCard({
       toast.error("Failed to delete meal.");
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleDateChange = async (nextDate: string) => {
+    if (!nextDate || nextDate === meal.meal_date) return;
+    if (nextDate > todayStr()) {
+      toast.error("Cannot move meals to a future date.");
+      return;
+    }
+    setSavingDate(true);
+    try {
+      await apiClient.patch(`/api/v1/nutrition/meals/${meal.id}`, {
+        meal_date: nextDate,
+      });
+      toast.success(`Moved to ${format(parseISO(nextDate), "MMM d, yyyy")}`);
+      if (onMoved) {
+        onMoved(nextDate);
+      } else {
+        onUpdate();
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to change meal date.";
+      toast.error(msg);
+    } finally {
+      setSavingDate(false);
     }
   };
 
@@ -714,10 +742,21 @@ function MealCard({
                 onClose={closeSearch}
               />
             ) : (
-              <div className="flex gap-2 pt-1">
+              <div className="flex flex-wrap gap-2 pt-1">
                 <Button variant="outline" size="sm" className="flex-1" onClick={() => setShowSearch(true)}>
                   <Plus className="h-3.5 w-3.5 mr-1" /> Add Food
                 </Button>
+                <label className="flex items-center gap-1.5 rounded-md border px-2 h-8 text-xs text-muted-foreground">
+                  <CalendarDays className="h-3.5 w-3.5 shrink-0" />
+                  <Input
+                    type="date"
+                    max={todayStr()}
+                    value={meal.meal_date}
+                    disabled={savingDate}
+                    onChange={(e) => handleDateChange(e.target.value)}
+                    className="h-7 w-[9.5rem] border-0 bg-transparent px-0 text-xs shadow-none focus-visible:ring-0"
+                  />
+                </label>
                 <Button variant="ghost" size="sm" onClick={handleDelete} disabled={deleting} className="text-destructive hover:text-destructive">
                   {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                 </Button>
@@ -898,6 +937,7 @@ export default function NutritionPage() {
               key={meal.id}
               meal={meal}
               onUpdate={loadData}
+              onMoved={(date) => setSelectedDate(date)}
               autoOpenSearch={searchMealId === meal.id}
               onSearchClose={() => setSearchMealId(null)}
             />

@@ -8,6 +8,7 @@ Endpoints:
 - POST /nutrition/meals              — log a new meal
 - POST /nutrition/meals/:id/items    — add food item to meal
 - DELETE /nutrition/meals/:id        — delete a meal
+- PATCH  /nutrition/meals/:id        — move a meal to another date
 - GET  /nutrition/targets            — user's daily macro targets
 """
 
@@ -66,6 +67,10 @@ class QuickLogRequest(BaseModel):
     meal_date: Optional[date] = Field(None, description="YYYY-MM-DD, defaults to today (user timezone)")
     name: Optional[str] = None
     items: list[AddFoodItemRequest] = []
+
+
+class UpdateMealRequest(BaseModel):
+    meal_date: date
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -732,6 +737,47 @@ async def delete_meal(
     await db.delete(meal)
     await db.commit()
     return {"deleted": meal_id}
+
+
+@router.patch("/meals/{meal_id}")
+async def update_meal(
+    meal_id: str,
+    request: UpdateMealRequest,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Move an existing meal to a different date. Does not change food items or macros."""
+    user = await _get_user(current_user.sub, db)
+    today = _user_today(user)
+
+    if request.meal_date > today:
+        raise HTTPException(status_code=400, detail="Cannot move meals to future dates")
+
+    result = await db.execute(
+        select(Meal).where(Meal.id == uuid.UUID(meal_id), Meal.user_id == user.id)
+    )
+    meal = result.scalar_one_or_none()
+    if not meal:
+        raise HTTPException(status_code=404, detail="Meal not found")
+
+    old_date = meal.meal_date
+    meal.meal_date = request.meal_date
+    await db.commit()
+
+    logger.info(
+        "Meal date updated",
+        user=current_user.sub,
+        meal_id=meal_id,
+        from_date=old_date.isoformat(),
+        to_date=request.meal_date.isoformat(),
+    )
+
+    return {
+        "id": str(meal.id),
+        "meal_type": meal.meal_type,
+        "name": meal.name,
+        "meal_date": meal.meal_date.isoformat(),
+    }
 
 
 @router.get("/targets")
