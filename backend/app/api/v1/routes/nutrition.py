@@ -349,6 +349,58 @@ async def _recalculate_meal_totals(meal: Meal, db: AsyncSession) -> None:
     meal.total_fat_g = row.fat_g
 
 
+def _food_match_key(name: str) -> str:
+    return name.strip().lower()
+
+
+def _add_to_item(
+    item: MealItem,
+    quantity_g: float,
+    calories: float | None,
+    protein_g: float | None,
+    carbs_g: float | None,
+    fat_g: float | None,
+    food_id: uuid.UUID | None = None,
+) -> None:
+    item.quantity_g = Decimal(str(round(float(item.quantity_g or 0) + float(quantity_g or 0), 2)))
+    item.calories = Decimal(str(round(float(item.calories or 0) + float(calories or 0), 1)))
+    item.protein_g = Decimal(str(round(float(item.protein_g or 0) + float(protein_g or 0), 1)))
+    item.carbs_g = Decimal(str(round(float(item.carbs_g or 0) + float(carbs_g or 0), 1)))
+    item.fat_g = Decimal(str(round(float(item.fat_g or 0) + float(fat_g or 0), 1)))
+    if food_id and not item.food_id:
+        item.food_id = food_id
+
+
+async def _collapse_duplicate_meal_items(meal_id: uuid.UUID, db: AsyncSession) -> bool:
+    """Merge items with the same food name in a meal. Returns True if anything changed."""
+    result = await db.execute(
+        select(MealItem).where(MealItem.meal_id == meal_id).order_by(MealItem.created_at)
+    )
+    items = list(result.scalars().all())
+    groups: dict[str, list[MealItem]] = {}
+    for item in items:
+        groups.setdefault(_food_match_key(item.food_name), []).append(item)
+
+    changed = False
+    for group in groups.values():
+        if len(group) < 2:
+            continue
+        keeper = group[0]
+        for extra in group[1:]:
+            _add_to_item(
+                keeper,
+                float(extra.quantity_g or 0),
+                float(extra.calories or 0),
+                float(extra.protein_g or 0),
+                float(extra.carbs_g or 0),
+                float(extra.fat_g or 0),
+                extra.food_id,
+            )
+            await db.delete(extra)
+            changed = True
+    return changed
+
+
 # ─── Food Search ─────────────────────────────────────────────────────────────
 
 @router.get("/foods")
@@ -451,6 +503,10 @@ async def get_today_summary(
     total_fat = 0.0
 
     for meal in meals:
+        collapsed = await _collapse_duplicate_meal_items(meal.id, db)
+        if collapsed:
+            await _recalculate_meal_totals(meal, db)
+            await db.commit()
         items_result = await db.execute(
             select(MealItem)
             .where(MealItem.meal_id == meal.id)
@@ -624,17 +680,33 @@ async def add_food_item(
             detail="Calories and protein are required when adding a custom food.",
         )
 
-    item = MealItem(
-        meal_id=meal.id,
-        food_id=food_db_id,
-        food_name=request.food_name,
-        quantity_g=actual_grams,
-        calories=calories,
-        protein_g=protein_g,
-        carbs_g=carbs_g,
-        fat_g=fat_g,
+    existing_result = await db.execute(
+        select(MealItem).where(MealItem.meal_id == meal.id)
     )
-    db.add(item)
+    existing = next(
+        (
+            i for i in existing_result.scalars().all()
+            if _food_match_key(i.food_name) == _food_match_key(request.food_name)
+        ),
+        None,
+    )
+
+    if existing:
+        _add_to_item(existing, actual_grams, calories, protein_g, carbs_g, fat_g, food_db_id)
+        item = existing
+    else:
+        item = MealItem(
+            meal_id=meal.id,
+            food_id=food_db_id,
+            food_name=request.food_name,
+            quantity_g=actual_grams,
+            calories=calories,
+            protein_g=protein_g,
+            carbs_g=carbs_g,
+            fat_g=fat_g,
+        )
+        db.add(item)
+
     await db.flush()
 
     # Recompute meal totals
@@ -752,6 +824,7 @@ async def quick_log_meal(
         db.add(item)
 
     await db.flush()
+    await _collapse_duplicate_meal_items(meal.id, db)
     await _recalculate_meal_totals(meal, db)
     await db.commit()
 
