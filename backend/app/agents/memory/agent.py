@@ -12,11 +12,11 @@ Responsibilities:
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from sqlalchemy import select, text
+from sqlalchemy import select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.base import AgentState, BaseAgent
@@ -24,6 +24,9 @@ from app.db.models.memory import MemoryStore, MemoryType, ConversationMessage, M
 from app.db.models.user import User, UserPreferences
 from app.db.models.goal import Goal, GoalStatus
 from app.db.models.event import Event
+from app.db.models.workout import WorkoutSession, SessionStatus
+from app.db.models.nutrition import Meal
+from app.db.models.measurement import Measurement
 from app.services.llm.provider import get_embedding_model
 from app.core.logging import get_logger
 
@@ -83,22 +86,27 @@ class MemoryAgent(BaseAgent):
 
         self._append_trace(state, "Loading memory context")
 
-        # Run all retrievals in parallel for performance
         permanent = await self._load_permanent_memory(user_id)
         goals = await self._load_active_goals(user_id)
         events = await self._load_upcoming_events(user_id)
         relevant = await self._retrieve_relevant_memories(
             user_id, state.get("user_message", "")
         )
+        recent_progress = await self._load_recent_progress(user_id)
+        conversation_history = await self._load_conversation_history(
+            user_id, state.get("session_id", "")
+        )
 
         state["permanent_memory"] = permanent
         state["current_goals"] = goals
         state["upcoming_events"] = events
         state["relevant_memories"] = relevant
+        state["recent_progress"] = recent_progress
+        state["conversation_history"] = conversation_history
         state["current_injuries"] = permanent.get("preferences", {}).get("current_injuries", [])
         state["current_phase"] = permanent.get("current_phase", "hypertrophy")
 
-        self._append_trace(state, f"Loaded {len(relevant)} relevant memories")
+        self._append_trace(state, f"Loaded {len(relevant)} relevant memories, {len(conversation_history)} prior messages")
         return state
 
     async def store_conversation_memory(self, state: AgentState) -> None:
@@ -217,6 +225,103 @@ class MemoryAgent(BaseAgent):
                 "peak_priority": e.peak_priority,
             }
             for e in events
+        ]
+
+    async def _load_recent_progress(self, user_id: str) -> dict[str, Any]:
+        """
+        Always-on: load last 7 days of workouts, nutrition, and weight measurements.
+
+        This ensures the Coach LLM always has real data regardless of which
+        specialist agent is routed to.
+        """
+        u = await self.db.execute(select(User.id).where(User.clerk_user_id == user_id))
+        user_row = u.first()
+        if not user_row:
+            return {}
+        uid = user_row[0]
+
+        today = date.today()
+        week_start = today - timedelta(days=7)
+
+        # --- Gym sessions (last 7 days) ---
+        sessions_result = await self.db.execute(
+            select(WorkoutSession).where(
+                WorkoutSession.user_id == uid,
+                WorkoutSession.scheduled_date >= week_start,
+            ).order_by(WorkoutSession.scheduled_date.desc())
+        )
+        sessions = sessions_result.scalars().all()
+        gym_planned = len(sessions)
+        gym_completed = sum(1 for s in sessions if s.status == SessionStatus.COMPLETED)
+        completed_sessions = [
+            {"date": s.scheduled_date.isoformat(), "name": s.session_name}
+            for s in sessions
+            if s.status == SessionStatus.COMPLETED
+        ]
+
+        # --- Nutrition (last 7 days) ---
+        meals_result = await self.db.execute(
+            select(Meal).where(
+                Meal.user_id == uid,
+                Meal.meal_date >= week_start,
+            )
+        )
+        meals = meals_result.scalars().all()
+        days_with_logs = len({m.meal_date for m in meals}) or 1
+        total_cals = sum(float(m.total_calories or 0) for m in meals)
+        total_protein = sum(float(m.total_protein_g or 0) for m in meals)
+        total_carbs = sum(float(m.total_carbs_g or 0) for m in meals)
+        total_fat = sum(float(m.total_fat_g or 0) for m in meals)
+
+        # --- Weight measurements (last 10 entries) ---
+        meas_result = await self.db.execute(
+            select(Measurement).where(
+                Measurement.user_id == uid,
+                Measurement.weight_kg.isnot(None),
+            ).order_by(Measurement.measured_on.desc()).limit(10)
+        )
+        measurements = meas_result.scalars().all()
+        weight_history = [
+            {"date": m.measured_on.isoformat(), "weight_kg": float(m.weight_kg)}
+            for m in measurements
+        ]
+
+        return {
+            "last_7_days": {
+                "gym_sessions_planned": gym_planned,
+                "gym_sessions_completed": gym_completed,
+                "gym_adherence_pct": round(gym_completed / gym_planned * 100) if gym_planned else 0,
+                "completed_sessions": completed_sessions,
+                "nutrition_days_logged": days_with_logs if meals else 0,
+                "avg_daily_calories": round(total_cals / days_with_logs) if meals else 0,
+                "avg_daily_protein_g": round(total_protein / days_with_logs) if meals else 0,
+                "avg_daily_carbs_g": round(total_carbs / days_with_logs) if meals else 0,
+                "avg_daily_fat_g": round(total_fat / days_with_logs) if meals else 0,
+            },
+            "weight_history": weight_history,
+        }
+
+    async def _load_conversation_history(
+        self, user_id: str, session_id: str, limit: int = 10
+    ) -> list[dict[str, Any]]:
+        """Load recent messages from the current session to maintain context."""
+        if not session_id:
+            return []
+
+        result = await self.db.execute(
+            select(ConversationMessage)
+            .where(ConversationMessage.session_id == session_id)
+            .order_by(ConversationMessage.created_at.desc())
+            .limit(limit)
+        )
+        messages = result.scalars().all()
+        return [
+            {
+                "role": m.role,
+                "content": m.content,
+                "created_at": m.created_at.isoformat() if m.created_at else None,
+            }
+            for m in reversed(messages)
         ]
 
     async def _retrieve_relevant_memories(

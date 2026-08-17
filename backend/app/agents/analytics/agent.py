@@ -7,9 +7,14 @@ from decimal import Decimal
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.base import AgentState, BaseAgent
+from app.db.models.user import User
+from app.db.models.measurement import Measurement
+from app.db.models.workout import WorkoutSession, SessionStatus
+from app.db.models.nutrition import Meal
 from app.core.logging import get_logger
 
 logger = get_logger("agent.analytics")
@@ -134,12 +139,67 @@ Provide data-driven insights and actionable recommendations.
         }
 
     async def _get_measurements(self, user_id: str) -> list[dict]:
-        return []  # From repository
+        """Fetch the user's weight measurements from the database."""
+        u = await self.db.execute(select(User.id).where(User.clerk_user_id == user_id))
+        user_row = u.first()
+        if not user_row:
+            return []
+        uid = user_row[0]
+
+        result = await self.db.execute(
+            select(Measurement).where(
+                Measurement.user_id == uid,
+                Measurement.weight_kg.isnot(None),
+            ).order_by(Measurement.measured_on.desc()).limit(20)
+        )
+        measurements = result.scalars().all()
+        return [
+            {
+                "date": m.measured_on.isoformat(),
+                "weight_kg": float(m.weight_kg),
+                "body_fat_pct": float(m.body_fat_pct) if m.body_fat_pct else None,
+                "muscle_mass_kg": float(m.muscle_mass_kg) if m.muscle_mass_kg else None,
+            }
+            for m in measurements
+        ]
 
     async def _calculate_adherence(self, user_id: str) -> dict[str, Any]:
+        """Calculate gym and nutrition adherence over the last 30 days."""
+        u = await self.db.execute(select(User.id).where(User.clerk_user_id == user_id))
+        user_row = u.first()
+        if not user_row:
+            return {"gym_pct": 0, "nutrition_pct": 0}
+        uid = user_row[0]
+
+        today = date.today()
+        thirty_days_ago = today - timedelta(days=30)
+
+        # Gym adherence: completed vs planned sessions
+        sessions_result = await self.db.execute(
+            select(WorkoutSession).where(
+                WorkoutSession.user_id == uid,
+                WorkoutSession.scheduled_date >= thirty_days_ago,
+            )
+        )
+        sessions = sessions_result.scalars().all()
+        gym_planned = len(sessions)
+        gym_completed = sum(1 for s in sessions if s.status == SessionStatus.COMPLETED)
+        gym_pct = round(gym_completed / gym_planned * 100) if gym_planned else 0
+
+        # Nutrition adherence: distinct days with any meal logged
+        days_result = await self.db.execute(
+            select(func.count(func.distinct(Meal.meal_date))).where(
+                Meal.user_id == uid,
+                Meal.meal_date >= thirty_days_ago,
+            )
+        )
+        nutrition_days = days_result.scalar() or 0
+        nutrition_pct = round(nutrition_days / 30 * 100)
+
         return {
-            "gym_pct": 0,
-            "swim_pct": 0,
-            "nutrition_pct": 0,
-            "sleep_pct": 0,
-        }  # From repository
+            "gym_pct": gym_pct,
+            "gym_sessions_planned_30d": gym_planned,
+            "gym_sessions_completed_30d": gym_completed,
+            "nutrition_pct": nutrition_pct,
+            "nutrition_days_logged_30d": int(nutrition_days),
+        }
