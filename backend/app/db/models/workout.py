@@ -177,6 +177,9 @@ class WorkoutSession(UUIDMixin, TimestampMixin, Base):
     sets: Mapped[list] = relationship(
         "WorkoutSet", back_populates="session", cascade="all, delete-orphan"
     )
+    cardio_logs: Mapped[list] = relationship(
+        "CardioLog", back_populates="workout_session"
+    )
 
     def __repr__(self) -> str:
         return f"<WorkoutSession {self.session_name} on {self.scheduled_date}>"
@@ -215,6 +218,67 @@ class WorkoutSet(UUIDMixin, TimestampMixin, Base):
 
     session: Mapped = relationship("WorkoutSession", back_populates="sets")
     exercise: Mapped = relationship("Exercise", back_populates="workout_sets")
+
+
+class CardioType(str, Enum):
+    RUNNING = "running"
+    CYCLING = "cycling"
+    WALKING = "walking"
+    ELLIPTICAL = "elliptical"
+    SWIMMING = "swimming"
+    JUMP_ROPE = "jump_rope"
+    ROWING = "rowing"
+    STAIR_CLIMBER = "stair_climber"
+    HIIT = "hiit"
+    YOGA = "yoga"
+    OTHER = "other"
+
+
+class CardioIntensity(str, Enum):
+    LOW = "low"
+    MODERATE = "moderate"
+    HIGH = "high"
+
+
+class CardioLog(UUIDMixin, TimestampMixin, Base):
+    """
+    Post-workout (or standalone) cardio session log.
+
+    Linked to a workout_session when performed immediately after weights;
+    can also be logged standalone (session_id = NULL).
+    """
+
+    __tablename__ = "cardio_logs"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    session_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workout_sessions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    log_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    cardio_type: Mapped[CardioType] = mapped_column(
+        String(50), default=CardioType.OTHER, nullable=False
+    )
+    performed: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    duration_minutes: Mapped[int | None] = mapped_column(Integer)
+    # Calories from Apple Watch / cardio machine (user-provided)
+    calories_burned: Mapped[int | None] = mapped_column(Integer)
+    distance_km: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
+    avg_heart_rate: Mapped[int | None] = mapped_column(Integer)
+    intensity: Mapped[CardioIntensity | None] = mapped_column(String(20))
+    notes: Mapped[str | None] = mapped_column(Text)
+
+    workout_session: Mapped = relationship("WorkoutSession", back_populates="cardio_logs")
+
+    def __repr__(self) -> str:
+        return f"<CardioLog {self.cardio_type} {self.log_date} {self.duration_minutes}min>"
 
 
 class ExerciseHistory(UUIDMixin, TimestampMixin, Base):

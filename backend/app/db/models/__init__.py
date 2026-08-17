@@ -14,6 +14,7 @@ from app.db.models.workout import (
     WorkoutSession,
     WorkoutSet,
     ExerciseHistory,
+    CardioLog,
 )
 from app.db.models.nutrition import (
     Food,
@@ -43,6 +44,7 @@ __all__ = [
     "WorkoutSession",
     "WorkoutSet",
     "ExerciseHistory",
+    "CardioLog",
     "Food",
     "Recipe",
     "NutritionPlan",

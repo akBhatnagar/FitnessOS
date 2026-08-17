@@ -19,6 +19,7 @@ import { DatePickerBar, todayStr } from "@/components/shared/DatePickerBar";
 import { MuscleWorkoutView } from "@/components/workouts/MuscleWorkoutView";
 import { WorkoutPlanEditor, PlanEditorConfig } from "@/components/workouts/WorkoutPlanEditor";
 import { WorkoutExecutionView } from "@/components/workouts/WorkoutExecutionView";
+import { CardioModal } from "@/components/workouts/CardioModal";
 import {
   LOG_MUSCLE_OPTIONS,
   MIXED_WORKOUT,
@@ -551,6 +552,7 @@ export default function WorkoutsPage() {
   const [customExerciseName, setCustomExerciseName] = useState("");
   const [customExerciseMuscle, setCustomExerciseMuscle] = useState(ALL_DB_MUSCLES[0]);
   const [addingCustomExercise, setAddingCustomExercise] = useState(false);
+  const [cardioModal, setCardioModal] = useState<{ sessionId?: string } | null>(null);
 
   const isToday = selectedDate === todayStr();
 
@@ -923,7 +925,15 @@ export default function WorkoutsPage() {
 
   if (view === "plan_editor" && planEditor) {
     return (
-      <WorkoutPlanEditor
+      <>
+        {cardioModal && (
+          <CardioModal
+            sessionId={cardioModal.sessionId}
+            onClose={() => setCardioModal(null)}
+            onSaved={() => setCardioModal(null)}
+          />
+        )}
+        <WorkoutPlanEditor
         config={planEditor}
         onBack={() => { setView("overview"); setPlanEditor(null); loadData(); }}
         onSaved={() => { setView("overview"); setPlanEditor(null); loadData(); }}
@@ -941,6 +951,7 @@ export default function WorkoutsPage() {
           });
         }}
       />
+      </>
     );
   }
 
@@ -953,7 +964,12 @@ export default function WorkoutsPage() {
           openPlanEditorForSession(workoutExecution.session);
           setWorkoutExecution(null);
         }}
-        onComplete={() => { setView("overview"); setWorkoutExecution(null); loadData(); }}
+        onComplete={() => {
+          setCardioModal({ sessionId: workoutExecution.session.id });
+          setView("overview");
+          setWorkoutExecution(null);
+          loadData();
+        }}
       />
     );
   }
@@ -965,7 +981,12 @@ export default function WorkoutsPage() {
         dbMuscles={muscleWorkout.dbMuscles}
         defaultPrimaryMuscle={muscleWorkout.defaultPrimaryMuscle}
         onBack={() => { setView("overview"); setMuscleWorkout(null); }}
-        onComplete={() => { setView("overview"); setMuscleWorkout(null); loadData(); }}
+        onComplete={() => {
+          setCardioModal({ sessionId: muscleWorkout.session.id });
+          setView("overview");
+          setMuscleWorkout(null);
+          loadData();
+        }}
       />
     );
   }
@@ -974,7 +995,11 @@ export default function WorkoutsPage() {
     return (
       <ActiveSessionView
         session={activeSession}
-        onComplete={() => { setView("overview"); loadData(); }}
+        onComplete={() => {
+          setCardioModal({ sessionId: activeSession.id });
+          setView("overview");
+          loadData();
+        }}
       />
     );
   }
@@ -1034,6 +1059,13 @@ export default function WorkoutsPage() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
+      {cardioModal && (
+        <CardioModal
+          sessionId={cardioModal.sessionId}
+          onClose={() => setCardioModal(null)}
+          onSaved={() => setCardioModal(null)}
+        />
+      )}
       {/* Header */}
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-2 flex-wrap">
