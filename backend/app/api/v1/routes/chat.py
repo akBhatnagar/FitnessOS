@@ -175,6 +175,77 @@ class ConversationHistoryResponse(BaseModel):
     total_count: int
 
 
+class ConversationSessionSummary(BaseModel):
+    session_id: str
+    first_message: str
+    last_message_at: str
+    message_count: int
+
+
+@router.get("/sessions")
+async def list_conversation_sessions(
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    limit: int = 30,
+) -> dict:
+    """List all conversation sessions for the current user, newest first."""
+    from sqlalchemy import func, select
+    from app.db.models.memory import ConversationMessage
+    from app.db.models.user import User
+
+    # Resolve internal user id
+    user_result = await db.execute(
+        select(User.id).where(User.clerk_user_id == current_user.sub)
+    )
+    user_id = user_result.scalar_one_or_none()
+    if not user_id:
+        return {"sessions": []}
+
+    # Per session: first user message text, last message timestamp, message count
+    subq = (
+        select(
+            ConversationMessage.session_id,
+            func.min(ConversationMessage.created_at).label("first_at"),
+            func.max(ConversationMessage.created_at).label("last_at"),
+            func.count(ConversationMessage.id).label("msg_count"),
+        )
+        .where(ConversationMessage.user_id == user_id)
+        .group_by(ConversationMessage.session_id)
+        .order_by(func.max(ConversationMessage.created_at).desc())
+        .limit(limit)
+        .subquery()
+    )
+
+    rows = await db.execute(select(subq))
+    rows = rows.fetchall()
+
+    sessions = []
+    for row in rows:
+        session_id, first_at, last_at, msg_count = row
+        # Fetch the first user message for the preview
+        preview_result = await db.execute(
+            select(ConversationMessage.content)
+            .where(
+                ConversationMessage.user_id == user_id,
+                ConversationMessage.session_id == session_id,
+                ConversationMessage.role == "user",
+            )
+            .order_by(ConversationMessage.created_at.asc())
+            .limit(1)
+        )
+        preview = preview_result.scalar_one_or_none() or ""
+        sessions.append(
+            {
+                "session_id": session_id,
+                "preview": preview[:120],
+                "last_message_at": last_at.isoformat() if last_at else "",
+                "message_count": msg_count,
+            }
+        )
+
+    return {"sessions": sessions}
+
+
 @router.get("/history/{session_id}", response_model=ConversationHistoryResponse)
 async def get_conversation_history(
     session_id: str,

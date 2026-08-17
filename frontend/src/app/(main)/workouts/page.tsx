@@ -10,7 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import {
   Dumbbell, Play, CheckCircle2, Clock, ChevronRight,
   Search, Plus, Zap, TrendingUp, BarChart3, RotateCcw,
-  Trophy, Target, AlertCircle, Loader2, Moon, Trash2, CalendarDays,
+  Trophy, Target, AlertCircle, Loader2, Moon, Trash2, CalendarDays, Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiClient } from "@/services/api";
@@ -19,6 +19,7 @@ import { DatePickerBar, todayStr } from "@/components/shared/DatePickerBar";
 import { MuscleWorkoutView } from "@/components/workouts/MuscleWorkoutView";
 import { WorkoutPlanEditor, PlanEditorConfig } from "@/components/workouts/WorkoutPlanEditor";
 import { WorkoutExecutionView } from "@/components/workouts/WorkoutExecutionView";
+import { CardioModal } from "@/components/workouts/CardioModal";
 import {
   LOG_MUSCLE_OPTIONS,
   MIXED_WORKOUT,
@@ -551,6 +552,7 @@ export default function WorkoutsPage() {
   const [customExerciseName, setCustomExerciseName] = useState("");
   const [customExerciseMuscle, setCustomExerciseMuscle] = useState(ALL_DB_MUSCLES[0]);
   const [addingCustomExercise, setAddingCustomExercise] = useState(false);
+  const [cardioModal, setCardioModal] = useState<{ sessionId?: string } | null>(null);
 
   const isToday = selectedDate === todayStr();
 
@@ -923,7 +925,16 @@ export default function WorkoutsPage() {
 
   if (view === "plan_editor" && planEditor) {
     return (
-      <WorkoutPlanEditor
+      <>
+        {cardioModal && (
+          <CardioModal
+            sessionId={cardioModal.sessionId}
+            logDate={selectedDate}
+            onClose={() => setCardioModal(null)}
+            onSaved={() => setCardioModal(null)}
+          />
+        )}
+        <WorkoutPlanEditor
         config={planEditor}
         onBack={() => { setView("overview"); setPlanEditor(null); loadData(); }}
         onSaved={() => { setView("overview"); setPlanEditor(null); loadData(); }}
@@ -941,6 +952,7 @@ export default function WorkoutsPage() {
           });
         }}
       />
+      </>
     );
   }
 
@@ -953,7 +965,12 @@ export default function WorkoutsPage() {
           openPlanEditorForSession(workoutExecution.session);
           setWorkoutExecution(null);
         }}
-        onComplete={() => { setView("overview"); setWorkoutExecution(null); loadData(); }}
+        onComplete={() => {
+          setCardioModal({ sessionId: workoutExecution.session.id });
+          setView("overview");
+          setWorkoutExecution(null);
+          loadData();
+        }}
       />
     );
   }
@@ -965,7 +982,12 @@ export default function WorkoutsPage() {
         dbMuscles={muscleWorkout.dbMuscles}
         defaultPrimaryMuscle={muscleWorkout.defaultPrimaryMuscle}
         onBack={() => { setView("overview"); setMuscleWorkout(null); }}
-        onComplete={() => { setView("overview"); setMuscleWorkout(null); loadData(); }}
+        onComplete={() => {
+          setCardioModal({ sessionId: muscleWorkout.session.id });
+          setView("overview");
+          setMuscleWorkout(null);
+          loadData();
+        }}
       />
     );
   }
@@ -974,7 +996,11 @@ export default function WorkoutsPage() {
     return (
       <ActiveSessionView
         session={activeSession}
-        onComplete={() => { setView("overview"); loadData(); }}
+        onComplete={() => {
+          setCardioModal({ sessionId: activeSession.id });
+          setView("overview");
+          loadData();
+        }}
       />
     );
   }
@@ -1034,6 +1060,14 @@ export default function WorkoutsPage() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
+      {cardioModal && (
+        <CardioModal
+          sessionId={cardioModal.sessionId}
+          logDate={selectedDate}
+          onClose={() => setCardioModal(null)}
+          onSaved={() => setCardioModal(null)}
+        />
+      )}
       {/* Header */}
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -1341,6 +1375,16 @@ export default function WorkoutsPage() {
             Log Rest Day
           </Button>
         </div>
+        <div className="mt-2">
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => setCardioModal({})}
+          >
+            <Activity className="h-4 w-4 mr-2" />
+            Log Cardio Only
+          </Button>
+        </div>
       </div>
 
       {/* Sessions for selected date */}
@@ -1491,7 +1535,20 @@ export default function WorkoutsPage() {
                             </Button>
                           )}
                           {s.status === "completed" || isRest ? (
-                            <CheckCircle2 className="h-8 w-8 text-green-400" />
+                            <div className="flex flex-col items-end gap-2">
+                              <CheckCircle2 className="h-8 w-8 text-green-400" />
+                              {!isRest && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="text-xs"
+                                  onClick={() => setCardioModal({ sessionId: s.id })}
+                                >
+                                  <Activity className="h-3.5 w-3.5 mr-1" />
+                                  Cardio
+                                </Button>
+                              )}
+                            </div>
                           ) : (
                             <Button onClick={() => resumeSession(s)} size="sm">
                               <Play className="h-4 w-4 mr-1" />
