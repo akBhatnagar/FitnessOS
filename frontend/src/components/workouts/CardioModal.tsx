@@ -39,11 +39,12 @@ const INTENSITIES = [
 
 interface CardioModalProps {
   sessionId?: string;
+  logDate?: string;   // ISO date string for standalone logs
   onClose: () => void;
   onSaved?: () => void;
 }
 
-export function CardioModal({ sessionId, onClose, onSaved }: CardioModalProps) {
+export function CardioModal({ sessionId, logDate, onClose, onSaved }: CardioModalProps) {
   const [performed, setPerformed] = useState<boolean | null>(null);
   const [cardioType, setCardioType] = useState("running");
   const [duration, setDuration] = useState("");
@@ -67,6 +68,7 @@ export function CardioModal({ sessionId, onClose, onSaved }: CardioModalProps) {
     try {
       await apiClient.post("/api/v1/cardio", {
         session_id: sessionId || null,
+        log_date: logDate || null,
         cardio_type: cardioType,
         performed,
         duration_minutes: duration ? parseInt(duration) : null,

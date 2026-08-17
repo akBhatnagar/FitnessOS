@@ -10,7 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import {
   Dumbbell, Play, CheckCircle2, Clock, ChevronRight,
   Search, Plus, Zap, TrendingUp, BarChart3, RotateCcw,
-  Trophy, Target, AlertCircle, Loader2, Moon, Trash2, CalendarDays,
+  Trophy, Target, AlertCircle, Loader2, Moon, Trash2, CalendarDays, Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiClient } from "@/services/api";
@@ -929,6 +929,7 @@ export default function WorkoutsPage() {
         {cardioModal && (
           <CardioModal
             sessionId={cardioModal.sessionId}
+            logDate={selectedDate}
             onClose={() => setCardioModal(null)}
             onSaved={() => setCardioModal(null)}
           />
@@ -1062,6 +1063,7 @@ export default function WorkoutsPage() {
       {cardioModal && (
         <CardioModal
           sessionId={cardioModal.sessionId}
+          logDate={selectedDate}
           onClose={() => setCardioModal(null)}
           onSaved={() => setCardioModal(null)}
         />
@@ -1373,6 +1375,16 @@ export default function WorkoutsPage() {
             Log Rest Day
           </Button>
         </div>
+        <div className="mt-2">
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => setCardioModal({})}
+          >
+            <Activity className="h-4 w-4 mr-2" />
+            Log Cardio Only
+          </Button>
+        </div>
       </div>
 
       {/* Sessions for selected date */}
@@ -1523,7 +1535,20 @@ export default function WorkoutsPage() {
                             </Button>
                           )}
                           {s.status === "completed" || isRest ? (
-                            <CheckCircle2 className="h-8 w-8 text-green-400" />
+                            <div className="flex flex-col items-end gap-2">
+                              <CheckCircle2 className="h-8 w-8 text-green-400" />
+                              {!isRest && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="text-xs"
+                                  onClick={() => setCardioModal({ sessionId: s.id })}
+                                >
+                                  <Activity className="h-3.5 w-3.5 mr-1" />
+                                  Cardio
+                                </Button>
+                              )}
+                            </div>
                           ) : (
                             <Button onClick={() => resumeSession(s)} size="sm">
                               <Play className="h-4 w-4 mr-1" />
