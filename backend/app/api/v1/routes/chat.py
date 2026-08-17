@@ -14,15 +14,48 @@ from typing import Any, AsyncGenerator
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.graph import run_agent_pipeline, stream_agent_pipeline
 from app.core.security import TokenPayload, get_current_user
 from app.db.session import AsyncSessionLocal, get_db
+from app.db.models.memory import ConversationMessage, MessageRole
+from app.db.models.user import User
 from app.core.logging import get_logger, bind_request_context
 
 logger = get_logger("api.chat")
 router = APIRouter(prefix="/chat", tags=["Chat"])
+
+
+async def _save_messages(
+    db: AsyncSession,
+    user_id: str,
+    session_id: str,
+    user_message: str,
+    assistant_response: str,
+) -> None:
+    """Persist the user message and assistant response to conversation_history."""
+    # Resolve clerk_user_id → internal UUID
+    result = await db.execute(select(User.id).where(User.clerk_user_id == user_id))
+    uid = result.scalar_one_or_none()
+    if not uid:
+        return
+
+    db.add(ConversationMessage(
+        user_id=uid,
+        session_id=session_id,
+        role=MessageRole.USER,
+        content=user_message,
+    ))
+    db.add(ConversationMessage(
+        user_id=uid,
+        session_id=session_id,
+        role=MessageRole.ASSISTANT,
+        content=assistant_response,
+        agent_name="coach",
+    ))
+    await db.flush()
 
 
 class ChatRequest(BaseModel):
@@ -110,7 +143,19 @@ async def send_message(
             detail="Failed to generate a coaching response. Please try again.",
         )
 
-    return _response_from_state(final_state, session_id, request_id)
+    response = _response_from_state(final_state, session_id, request_id)
+
+    # Persist both sides of the conversation
+    await _save_messages(
+        db=db,
+        user_id=current_user.sub,
+        session_id=session_id,
+        user_message=request.message,
+        assistant_response=response.response,
+    )
+    await db.commit()
+
+    return response
 
 
 async def _stream_chat(
@@ -150,6 +195,14 @@ async def _stream_chat(
                 elif event_type == "done":
                     state = event.get("state") or {}
                     payload = _response_from_state(state, session_id, request_id)
+                    # Persist conversation before committing
+                    await _save_messages(
+                        db=db,
+                        user_id=user_id,
+                        session_id=session_id,
+                        user_message=message,
+                        assistant_response=payload.response,
+                    )
                     await db.commit()
                     yield _sse({"type": "done", **payload.model_dump()})
                 elif event_type == "error":
