@@ -254,7 +254,7 @@ class MemoryAgent(BaseAgent):
         gym_planned = len(sessions)
         gym_completed = sum(1 for s in sessions if s.status == SessionStatus.COMPLETED)
         completed_sessions = [
-            {"date": s.scheduled_date.isoformat(), "name": s.name}
+            {"date": s.scheduled_date.isoformat(), "name": s.session_name}
             for s in sessions
             if s.status == SessionStatus.COMPLETED
         ]
