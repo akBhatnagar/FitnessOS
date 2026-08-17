@@ -307,14 +307,10 @@ class MemoryAgent(BaseAgent):
         """Load recent messages from the current session to maintain context."""
         if not session_id:
             return []
-        try:
-            session_uuid = uuid.UUID(session_id)
-        except (ValueError, AttributeError):
-            return []
 
         result = await self.db.execute(
             select(ConversationMessage)
-            .where(ConversationMessage.session_id == session_uuid)
+            .where(ConversationMessage.session_id == session_id)
             .order_by(ConversationMessage.created_at.desc())
             .limit(limit)
         )
