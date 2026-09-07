@@ -1,0 +1,1128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101813">
+  <title>21-Day Pre-Wedding Physique Plan</title>
+  <style>
+    :root {
+      --ink: #152019;
+      --muted: #69736c;
+      --paper: #f4f1e8;
+      --surface: #fffdf7;
+      --surface-2: #e9eee8;
+      --line: #d7ddd5;
+      --green: #1c6845;
+      --green-2: #2d8a60;
+      --lime: #c9ef67;
+      --amber: #b66f23;
+      --red: #ad463b;
+      --radius: 18px;
+      --shadow: 0 18px 50px rgba(30, 48, 36, .09);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 0 0, rgba(201, 239, 103, .17), transparent 24rem),
+        var(--paper);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+    button, input, textarea { font: inherit; }
+    button { color: inherit; }
+    a { color: var(--green); }
+
+    .shell {
+      display: grid;
+      grid-template-columns: 250px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+    .side {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 28px 18px;
+      color: #f7f8f3;
+      background: #101813;
+      overflow-y: auto;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      margin: 0 8px 30px;
+      font-weight: 800;
+      letter-spacing: -.02em;
+    }
+    .mark {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      color: #101813;
+      background: var(--lime);
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 900;
+    }
+    .nav {
+      display: grid;
+      gap: 5px;
+    }
+    .nav button {
+      width: 100%;
+      padding: 10px 12px;
+      border: 0;
+      border-radius: 10px;
+      color: #aeb8b0;
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+    }
+    .nav button:hover,
+    .nav button.active {
+      color: white;
+      background: rgba(255,255,255,.09);
+    }
+    .side-note {
+      margin: 28px 8px 0;
+      padding-top: 20px;
+      border-top: 1px solid rgba(255,255,255,.12);
+      color: #9da99f;
+      font-size: 12px;
+    }
+
+    main { min-width: 0; padding: 34px clamp(18px, 4vw, 64px) 80px; }
+    .view { display: none; max-width: 1180px; margin: 0 auto; }
+    .view.active { display: block; animation: appear .2s ease-out; }
+    @keyframes appear { from { opacity: 0; transform: translateY(4px); } }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      padding: clamp(26px, 5vw, 54px);
+      border-radius: 28px;
+      color: white;
+      background: #183a29;
+      box-shadow: var(--shadow);
+    }
+    .hero::after {
+      content: "";
+      position: absolute;
+      width: 310px;
+      height: 310px;
+      right: -100px;
+      bottom: -170px;
+      border: 46px solid rgba(201,239,103,.16);
+      border-radius: 50%;
+    }
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--lime);
+      font-size: 12px;
+      font-weight: 850;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+    h1 {
+      max-width: 760px;
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(38px, 6vw, 72px);
+      font-weight: 500;
+      letter-spacing: -.045em;
+      line-height: .98;
+    }
+    .hero-copy {
+      max-width: 670px;
+      margin: 22px 0 0;
+      color: #cad8ce;
+      font-size: 16px;
+    }
+    .hero-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 30px;
+    }
+    .hero-chip {
+      padding: 8px 12px;
+      border: 1px solid rgba(255,255,255,.17);
+      border-radius: 999px;
+      color: #eef4ef;
+      background: rgba(255,255,255,.06);
+      font-size: 13px;
+    }
+
+    .section-head {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 16px;
+      margin: 42px 0 16px;
+    }
+    h2 {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(28px, 4vw, 42px);
+      font-weight: 500;
+      letter-spacing: -.035em;
+      line-height: 1.05;
+    }
+    h3 { margin: 0 0 9px; font-size: 17px; letter-spacing: -.01em; }
+    .subtle { color: var(--muted); }
+
+    .grid { display: grid; gap: 16px; }
+    .grid.metrics { grid-template-columns: repeat(4, 1fr); margin-top: 18px; }
+    .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .card {
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+    .card.emphasis { border-color: #b4c6ba; background: #f7fbf6; }
+    .metric strong {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--green);
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 34px;
+      font-weight: 500;
+      line-height: 1;
+    }
+    .metric span { color: var(--muted); font-size: 13px; }
+
+    .today-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(300px, .75fr);
+      gap: 18px;
+      margin-top: 18px;
+    }
+    .progress-card { padding: 24px; border-radius: var(--radius); background: var(--lime); }
+    .progress-label { display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; }
+    .progress-track {
+      height: 12px;
+      margin: 12px 0 8px;
+      overflow: hidden;
+      border-radius: 99px;
+      background: rgba(16,24,19,.16);
+    }
+    .progress-fill { width: 0; height: 100%; border-radius: inherit; background: #101813; transition: width .25s; }
+
+    .date-settings {
+      display: flex;
+      align-items: end;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    label.field { display: grid; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 700; }
+    input[type="date"], input[type="number"], textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      color: var(--ink);
+      background: white;
+      outline: none;
+    }
+    input:focus, textarea:focus { border-color: var(--green-2); box-shadow: 0 0 0 3px rgba(45,138,96,.12); }
+    textarea { min-height: 94px; resize: vertical; }
+    .btn {
+      padding: 10px 14px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--surface);
+      font-weight: 750;
+      cursor: pointer;
+    }
+    .btn:hover { border-color: var(--green); }
+    .btn.primary { border-color: #101813; color: white; background: #101813; }
+    .btn.danger { color: var(--red); }
+
+    .calendar-wrap { overflow-x: auto; padding: 2px 2px 8px; }
+    .calendar {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(108px, 1fr));
+      gap: 9px;
+      min-width: 800px;
+    }
+    .day {
+      min-height: 98px;
+      padding: 11px;
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      color: var(--ink);
+      background: var(--surface);
+      text-align: left;
+      cursor: pointer;
+      transition: transform .15s, border-color .15s;
+    }
+    .day:hover { transform: translateY(-2px); border-color: #91a798; }
+    .day.selected { outline: 2px solid var(--green); outline-offset: 1px; }
+    .day.today { background: #eff9d3; }
+    .day.past { color: #727b75; }
+    .day.shoot { color: white; background: var(--green); border-color: var(--green); }
+    .day-top { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; font-weight: 800; text-transform: uppercase; }
+    .day-date { display: block; margin: 7px 0 4px; font-size: 16px; font-weight: 850; }
+    .day-session { display: block; overflow: hidden; color: inherit; font-size: 11px; white-space: nowrap; text-overflow: ellipsis; }
+    .day-done { color: var(--green); }
+    .shoot .day-done { color: var(--lime); }
+
+    .checklist { display: grid; gap: 8px; }
+    .check {
+      display: grid;
+      grid-template-columns: 24px 1fr auto;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 13px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: white;
+      cursor: pointer;
+    }
+    .check:hover { border-color: #9db1a3; }
+    .check input { width: 17px; height: 17px; accent-color: var(--green); }
+    .check small { color: var(--muted); }
+    .check:has(input:checked) .check-name { color: var(--muted); text-decoration: line-through; }
+
+    .tracker-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
+    .pill {
+      display: inline-block;
+      padding: 4px 9px;
+      border-radius: 999px;
+      color: var(--green);
+      background: #e0eee4;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+    .callout {
+      padding: 17px 19px;
+      border-left: 4px solid var(--amber);
+      border-radius: 0 12px 12px 0;
+      background: #fff6e9;
+    }
+    .callout.safe { border-color: var(--green); background: #edf5ef; }
+    .callout strong { display: block; margin-bottom: 3px; }
+
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; }
+    table { width: 100%; border-collapse: collapse; background: var(--surface); }
+    th, td { padding: 13px 15px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { color: var(--muted); background: #edf0ea; font-size: 11px; letter-spacing: .07em; text-transform: uppercase; }
+    tr:last-child td { border-bottom: 0; }
+    td.num, th.num { text-align: right; white-space: nowrap; }
+    ul.clean { margin: 0; padding-left: 19px; }
+    ul.clean li + li { margin-top: 7px; }
+
+    details {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--surface);
+    }
+    details + details { margin-top: 9px; }
+    summary { padding: 15px 17px; font-weight: 800; cursor: pointer; }
+    details > div { padding: 0 17px 17px; }
+    .workout-list { display: grid; gap: 8px; counter-reset: move; }
+    .move {
+      display: grid;
+      grid-template-columns: 28px 1fr auto;
+      gap: 10px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .move:last-child { border: 0; }
+    .move::before {
+      counter-increment: move;
+      content: counter(move);
+      display: grid;
+      place-items: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      color: white;
+      background: var(--green);
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .move span:last-child { color: var(--muted); white-space: nowrap; }
+
+    .phase {
+      display: grid;
+      grid-template-columns: 110px 1fr;
+      gap: 18px;
+      padding: 20px 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .phase:last-child { border: 0; }
+    .phase-time { color: var(--green); font-weight: 850; }
+    .phase p { margin: 5px 0 0; color: var(--muted); }
+
+    .footer {
+      max-width: 1180px;
+      margin: 40px auto 0;
+      padding-top: 20px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .toast {
+      position: fixed;
+      right: 20px;
+      bottom: 20px;
+      z-index: 10;
+      padding: 11px 15px;
+      border-radius: 10px;
+      color: white;
+      background: #101813;
+      opacity: 0;
+      transform: translateY(8px);
+      pointer-events: none;
+      transition: .2s;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .mobile-nav { display: none; }
+
+    @media (max-width: 900px) {
+      .shell { display: block; }
+      .side { display: none; }
+      main { padding-top: 18px; padding-bottom: 100px; }
+      .mobile-nav {
+        position: fixed;
+        left: 10px;
+        right: 10px;
+        bottom: 10px;
+        z-index: 9;
+        display: flex;
+        justify-content: space-around;
+        gap: 4px;
+        padding: 7px;
+        border: 1px solid rgba(255,255,255,.1);
+        border-radius: 15px;
+        background: #101813;
+      }
+      .mobile-nav button {
+        flex: 1;
+        padding: 8px 4px;
+        border: 0;
+        border-radius: 9px;
+        color: #aeb8b0;
+        background: transparent;
+        font-size: 10px;
+      }
+      .mobile-nav button.active { color: white; background: rgba(255,255,255,.1); }
+      .grid.metrics { grid-template-columns: repeat(2, 1fr); }
+      .today-grid, .grid.two, .grid.three { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 560px) {
+      .hero { border-radius: 20px; }
+      .grid.metrics { grid-template-columns: 1fr 1fr; }
+      .metric strong { font-size: 27px; }
+      .tracker-fields { grid-template-columns: 1fr; }
+      th, td { padding: 11px; }
+      .phase { grid-template-columns: 1fr; gap: 3px; }
+    }
+    @media print {
+      body { background: white; }
+      .side, .mobile-nav, .no-print, .toast { display: none !important; }
+      .shell { display: block; }
+      main { padding: 0; }
+      .view { display: block !important; break-before: page; }
+      .view:first-child { break-before: auto; }
+      .hero { color: black; background: white; border: 1px solid #aaa; box-shadow: none; }
+      .hero-copy { color: #444; }
+      .card, details, .table-wrap { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="side">
+      <div class="brand"><span class="mark">21</span> Physique Protocol</div>
+      <nav class="nav" aria-label="Plan sections">
+        <button class="active" data-view="dashboard">Today &amp; Calendar</button>
+        <button data-view="nutrition">Nutrition</button>
+        <button data-view="training">Training</button>
+        <button data-view="final-week">Final Week</button>
+        <button data-view="tracking">Tracking &amp; Rules</button>
+      </nav>
+      <p class="side-note">
+        Your check-ins are saved only in this browser using local storage. The page works offline.
+      </p>
+    </aside>
+
+    <main>
+      <section class="view active" id="dashboard">
+        <header class="hero">
+          <p class="eyebrow">Pre-wedding physique protocol</p>
+          <h1>Make every one of the next 21 days count.</h1>
+          <p class="hero-copy">
+            A focused, safe fat-loss plan designed around your 98 kg starting weight,
+            evening gym schedule, preferred foods, and V-taper goal.
+          </p>
+          <div class="hero-meta">
+            <span class="hero-chip" id="countdown-chip">21 preparation days</span>
+            <span class="hero-chip">2,000 kcal target</span>
+            <span class="hero-chip">190 g protein</span>
+            <span class="hero-chip">10,000 steps</span>
+          </div>
+        </header>
+
+        <div class="section-head">
+          <div>
+            <p class="eyebrow" style="color:var(--green)">Your plan</p>
+            <h2 id="selected-title">Today’s protocol</h2>
+          </div>
+          <div class="date-settings no-print">
+            <label class="field">Actual shoot date
+              <input id="shoot-date" type="date">
+            </label>
+            <button class="btn" id="jump-today">Jump to today</button>
+          </div>
+        </div>
+
+        <div class="grid metrics">
+          <div class="card metric"><strong>2–4 kg</strong><span>Realistic scale loss</span></div>
+          <div class="card metric"><strong>1.2–2.2 kg</strong><span>Plausible actual fat loss</span></div>
+          <div class="card metric"><strong>2–5 cm</strong><span>Possible waist reduction</span></div>
+          <div class="card metric"><strong>8 hours</strong><span>Nightly sleep target</span></div>
+        </div>
+
+        <div class="today-grid">
+          <div>
+            <div class="progress-card">
+              <div class="progress-label">
+                <span>Selected-day completion</span>
+                <span id="completion-label">0 / 7</span>
+              </div>
+              <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+              <small id="day-guidance">Consistency beats a perfect single day.</small>
+            </div>
+            <div class="card" style="margin-top:16px">
+              <span class="pill" id="session-pill">Day 1</span>
+              <h3 id="session-name" style="margin-top:10px">Pull / width</h3>
+              <p class="subtle" id="session-detail"></p>
+              <div class="checklist" id="checklist"></div>
+            </div>
+          </div>
+          <div class="card">
+            <h3>Daily check-in</h3>
+            <p class="subtle" style="margin-top:0">Saved automatically for the selected date.</p>
+            <div class="tracker-fields">
+              <label class="field">Morning weight (kg)
+                <input id="weight-input" type="number" min="40" max="250" step="0.1" placeholder="98.0">
+              </label>
+              <label class="field">Waist (cm)
+                <input id="waist-input" type="number" min="40" max="200" step="0.1" placeholder="104.1">
+              </label>
+            </div>
+            <label class="field" style="margin-top:12px">Energy / performance
+              <input id="energy-input" type="number" min="1" max="10" step="1" placeholder="1–10">
+            </label>
+            <label class="field" style="margin-top:12px">Notes
+              <textarea id="notes-input" placeholder="Hunger, digestion, workout performance, appearance…"></textarea>
+            </label>
+          </div>
+        </div>
+
+        <div class="section-head">
+          <div>
+            <p class="eyebrow" style="color:var(--green)">Timeline</p>
+            <h2>All preparation dates</h2>
+          </div>
+          <span class="subtle">Select any date to view or edit it</span>
+        </div>
+        <div class="calendar-wrap"><div class="calendar" id="calendar"></div></div>
+
+        <div class="callout safe" style="margin-top:18px">
+          <strong>Safe appearance strategy</strong>
+          Keep water and sodium consistent. Do not use dehydration, diuretics, laxatives,
+          “detoxes,” sauna cuts, or starvation.
+        </div>
+      </section>
+
+      <section class="view" id="nutrition">
+        <p class="eyebrow" style="color:var(--green)">Nutrition</p>
+        <h2>High protein. Controlled calories. Familiar food.</h2>
+        <p class="subtle">Targets are precise enough to guide action, not falsely exact. Use your package labels and weigh raw ingredients.</p>
+
+        <div class="grid metrics">
+          <div class="card metric"><strong>2,000</strong><span>kcal/day · range 1,900–2,100</span></div>
+          <div class="card metric"><strong>190 g</strong><span>protein · minimum 180 g</span></div>
+          <div class="card metric"><strong>185–200 g</strong><span>carbohydrate</span></div>
+          <div class="card metric"><strong>50–60 g</strong><span>fat · fibre 28–35 g</span></div>
+        </div>
+
+        <div class="section-head"><h2>Your paratha, corrected</h2></div>
+        <div class="grid two">
+          <div class="card">
+            <h3>Current recipe estimate</h3>
+            <p>One paratha: <b>≈419 kcal, 22 g protein, 42 g carbs, 18 g fat</b>.</p>
+            <p>Four daily: <b>≈1,676 kcal and 70 g fat</b> before tea, yogurt, eggs, vegetables, or protein.</p>
+            <div class="callout">
+              <strong>Main constraint</strong>
+              Full-fat paneer and total quantity—not a few drops of ghee—consume nearly the entire calorie budget.
+            </div>
+          </div>
+          <div class="card emphasis">
+            <h3>Optimized recipe: one paratha</h3>
+            <ul class="clean">
+              <li>40 g whole-wheat atta, weighed dry</li>
+              <li>100 g genuinely low-fat paneer</li>
+              <li>40 g onion + 40 g spinach/capsicum/coriander</li>
+              <li>1 g weighed ghee or cooking spray</li>
+            </ul>
+            <p><b>Planning value: ≈340 kcal, 30 g protein, 38 g carbs, 8 g fat.</b></p>
+            <small class="subtle">Assumes paneer at 160 kcal, 24 g protein and 6 g fat/100 g. Recalculate from your label.</small>
+          </div>
+        </div>
+
+        <div class="section-head"><h2>Exact base-day food schedule</h2></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Time</th><th>Food</th><th class="num">kcal</th><th class="num">Protein</th></tr></thead>
+            <tbody>
+              <tr><td>10:00</td><td>Wake, 500 mL water, 5–10 minutes daylight walking</td><td class="num">0</td><td class="num">0</td></tr>
+              <tr><td>11:15</td><td>Small ginger tea: 60 mL toned milk + water + 4 g sugar</td><td class="num">51</td><td class="num">1.8 g</td></tr>
+              <tr><td>12:00</td><td>2 optimized paneer parathas</td><td class="num">680</td><td class="num">60 g</td></tr>
+              <tr><td>15:00</td><td>Same small tea</td><td class="num">51</td><td class="num">1.8 g</td></tr>
+              <tr><td>15:30</td><td>Epigamia Turbo Greek yogurt, 200 g</td><td class="num">130</td><td class="num">24 g</td></tr>
+              <tr><td>17:15</td><td>Final tea, same recipe; no caffeine afterward</td><td class="num">51</td><td class="num">1.8 g</td></tr>
+              <tr><td>18:00</td><td>1 optimized paratha + 300 g non-starchy cooked vegetables + 10 g oil</td><td class="num">550</td><td class="num">36 g</td></tr>
+              <tr><td>20:00</td><td>1 medium banana + 1 SuperYou protein scoop + 400–500 mL water</td><td class="num">228</td><td class="num">25 g</td></tr>
+              <tr><td>22:15</td><td>250 g egg whites + 2 whole eggs</td><td class="num">274</td><td class="num">40 g</td></tr>
+              <tr><td><b>Total</b></td><td><b>Approximately 199 g carbohydrate, 52 g fat, 28–31 g fibre</b></td><td class="num"><b>2,015</b></td><td class="num"><b>191 g</b></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="grid two" style="margin-top:16px">
+          <div class="card">
+            <h3>Tea and supplement rules</h3>
+            <ul class="clean">
+              <li>Two or three teas are fine; three are included above.</li>
+              <li>Cap each at 4 g sugar and 60 mL toned milk.</li>
+              <li>One protein scoop is sufficient on this menu.</li>
+              <li>Use two scoops only if eggs or one paneer serving is omitted.</li>
+              <li>No fat burners or detox products.</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>Water, salt and digestion</h3>
+            <ul class="clean">
+              <li>Drink 3.0–3.5 L fluid, plus more when sweating heavily.</li>
+              <li>Keep salt quantity similar from day to day.</li>
+              <li>Walk for 10 minutes after both major meals.</li>
+              <li>Test onion or large dairy portions individually if bloated.</li>
+              <li>Avoid fizzy drinks, sugar alcohols and restaurant meals near the shoot.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" id="training">
+        <p class="eyebrow" style="color:var(--green)">Training</p>
+        <h2>Build the V-taper signal. Preserve everything else.</h2>
+        <p class="subtle">Five efficient sessions, one compact leg day, four incline walks, and no unnecessary failure training.</p>
+
+        <div class="section-head"><h2>Weekly split</h2></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Day</th><th>Weights</th><th>Conditioning</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td>Pull / width</td><td>25 min incline walk</td></tr>
+              <tr><td>2</td><td>Push / upper chest</td><td>20–25 min incline walk</td></tr>
+              <tr><td>3</td><td>Legs + core</td><td>10–15 min easy walk</td></tr>
+              <tr><td>4</td><td>Recovery</td><td>35–45 min brisk walk + mobility</td></tr>
+              <tr><td>5</td><td>Upper V-taper</td><td>20–25 min incline walk</td></tr>
+              <tr><td>6</td><td>Delts + arms</td><td>20 min easy incline walk</td></tr>
+              <tr><td>7</td><td>Rest</td><td>10,000 easy steps</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="section-head"><h2>Exact sessions</h2></div>
+        <div id="workout-accordions">
+          <details open>
+            <summary>Pull / width</summary>
+            <div class="workout-list">
+              <div class="move"><span>Neutral-grip lat pulldown</span><span>4 × 6–10</span></div>
+              <div class="move"><span>Chest-supported row</span><span>3 × 8–12</span></div>
+              <div class="move"><span>One-arm cable lat pull-in</span><span>3 × 10–15</span></div>
+              <div class="move"><span>Reverse pec deck</span><span>3 × 12–20</span></div>
+              <div class="move"><span>Cable curl</span><span>3 × 8–12</span></div>
+            </div>
+          </details>
+          <details>
+            <summary>Push / upper chest</summary>
+            <div class="workout-list">
+              <div class="move"><span>Incline dumbbell press</span><span>4 × 6–10</span></div>
+              <div class="move"><span>Machine chest press</span><span>3 × 8–12</span></div>
+              <div class="move"><span>Low-to-high cable fly</span><span>2 × 12–15</span></div>
+              <div class="move"><span>Cable lateral raise</span><span>4 × 12–20</span></div>
+              <div class="move"><span>Overhead cable triceps extension</span><span>3 × 10–15</span></div>
+            </div>
+          </details>
+          <details>
+            <summary>Legs + core</summary>
+            <div class="workout-list">
+              <div class="move"><span>Hack squat or leg press</span><span>3 × 6–10</span></div>
+              <div class="move"><span>Romanian deadlift</span><span>3 × 8–10</span></div>
+              <div class="move"><span>Leg curl</span><span>2 × 10–15</span></div>
+              <div class="move"><span>Calf raise</span><span>2 × 10–15</span></div>
+              <div class="move"><span>Pallof press</span><span>3 × 10/side</span></div>
+              <div class="move"><span>Reverse crunch</span><span>3 × 10–15</span></div>
+            </div>
+          </details>
+          <details>
+            <summary>Upper V-taper</summary>
+            <div class="workout-list">
+              <div class="move"><span>Pull-up or pulldown</span><span>3 × 6–10</span></div>
+              <div class="move"><span>Incline press</span><span>3 × 6–10</span></div>
+              <div class="move"><span>Seated cable row</span><span>3 × 8–12</span></div>
+              <div class="move"><span>Machine shoulder press</span><span>2 × 8–12</span></div>
+              <div class="move"><span>Lateral raise</span><span>4 × 12–20</span></div>
+              <div class="move"><span>Rear-delt fly</span><span>3 × 12–20</span></div>
+            </div>
+          </details>
+          <details>
+            <summary>Delts + arms</summary>
+            <div class="workout-list">
+              <div class="move"><span>Cable lateral raise</span><span>4 × 12–20</span></div>
+              <div class="move"><span>Reverse pec deck</span><span>3 × 15–20</span></div>
+              <div class="move"><span>Cable pullover</span><span>3 × 10–15</span></div>
+              <div class="move"><span>Cable fly</span><span>3 × 12–15</span></div>
+              <div class="move"><span>Incline curl</span><span>3 × 8–12</span></div>
+              <div class="move"><span>Rope pressdown</span><span>3 × 10–15</span></div>
+            </div>
+          </details>
+        </div>
+
+        <div class="grid two" style="margin-top:16px">
+          <div class="card"><h3>Execution</h3><ul class="clean">
+            <li>Compounds: rest 2–3 minutes.</li>
+            <li>Isolation work: rest 60–90 seconds.</li>
+            <li>Keep 1–3 good repetitions in reserve.</li>
+            <li>Add load only after all sets reach the top of the range.</li>
+            <li>Do weights before cardio.</li>
+          </ul></div>
+          <div class="card"><h3>Cardio and steps</h3><ul class="clean">
+            <li>Incline walk near 5–8% and 4.5–5.5 km/h, adjusted to fitness.</li>
+            <li>Use a pace where short sentences remain possible.</li>
+            <li>Target 10,000 total steps, including treadmill steps.</li>
+            <li>If currently below 5,000, use 8,000 for days 1–3 first.</li>
+          </ul></div>
+        </div>
+      </section>
+
+      <section class="view" id="final-week">
+        <p class="eyebrow" style="color:var(--green)">Peak safely</p>
+        <h2>Arrive lean-looking, full and rested.</h2>
+        <p class="subtle">The final week removes fatigue and digestive noise. It does not use bodybuilding dehydration.</p>
+
+        <div class="card" style="margin-top:24px">
+          <div class="phase"><div class="phase-time">T−7</div><div><h3>Pull, moderate</h3><p>Normal food, water, salt and fibre. No failure.</p></div></div>
+          <div class="phase"><div class="phase-time">T−6</div><div><h3>Push, moderate</h3><p>Preserve upper-chest and shoulder stimulus. Short easy cardio.</p></div></div>
+          <div class="phase"><div class="phase-time">T−5</div><div><h3>Final light legs</h3><p>Reduce sets, avoid soreness, and skip hard conditioning.</p></div></div>
+          <div class="phase"><div class="phase-time">T−4</div><div><h3>Upper body</h3><p>Moderate pump-focused work with several repetitions in reserve.</p></div></div>
+          <div class="phase"><div class="phase-time">T−3</div><div><h3>Rest and easy steps</h3><p>No hard cardio. Keep all meals familiar.</p></div></div>
+          <div class="phase"><div class="phase-time">T−2</div><div><h3>30–40 minute upper pump</h3><p>Two sets per upper-body muscle, 12–15 reps, far from failure.</p></div></div>
+          <div class="phase"><div class="phase-time">T−1</div><div><h3>Rest and reduce gut bulk</h3><p>Easy steps, early bed and familiar lower-residue meals.</p></div></div>
+        </div>
+
+        <div class="section-head"><h2>Final 48 hours</h2></div>
+        <div class="grid two">
+          <div class="card"><h3>Keep</h3><ul class="clean">
+            <li>3.0–3.5 L normal daily fluid</li>
+            <li>Stable salt intake</li>
+            <li>Familiar protein sources</li>
+            <li>Approximately 170–210 g carbohydrates</li>
+            <li>Eight hours sleep</li>
+          </ul></div>
+          <div class="card"><h3>Reduce or avoid</h3><ul class="clean">
+            <li>Alcohol and restaurant meals</li>
+            <li>Carbonated drinks and sugar alcohols</li>
+            <li>Beans, giant salads and excess onion</li>
+            <li>Unfamiliar foods or supplements</li>
+            <li>Hard training that creates soreness</li>
+          </ul></div>
+        </div>
+        <div class="callout safe" style="margin-top:16px">
+          <strong>Optional low-residue adjustment</strong>
+          In the final 24 hours only, reduce fibre to about 15–20 g if you already tested
+          this successfully. Choose rice, peeled potato, banana, yogurt, eggs and protein
+          as tolerated. Never eliminate water or sodium.
+        </div>
+
+        <div class="section-head"><h2>Shoot-day sequence</h2></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Timing</th><th>Action</th></tr></thead>
+            <tbody>
+              <tr><td>On waking</td><td>Use the bathroom, then drink normally. Do not judge your appearance before food and movement.</td></tr>
+              <tr><td>3–4 hours before</td><td>30–40 g protein + 40–60 g low-fibre carbohydrate. Example: 250 g egg whites, 2 eggs and 250–300 g peeled potato.</td></tr>
+              <tr><td>60–90 minutes before</td><td>20–40 g easy carbohydrate if needed: banana, rice cakes or a small rice portion. Use a familiar, modest amount of salt.</td></tr>
+              <tr><td>All morning</td><td>Sip to thirst. Do not deliberately restrict water.</td></tr>
+              <tr><td>15–25 minutes before</td><td>Two rounds: lateral raises, push-ups, band rows/pulldowns, curls and pressdowns, 12–20 reps each.</td></tr>
+              <tr><td>During pump</td><td>Stop before fatigue or heavy sweating. Do not pump abs or legs. Stand tall and breathe normally.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="view" id="tracking">
+        <p class="eyebrow" style="color:var(--green)">Feedback loop</p>
+        <h2>Use trends, not emotion.</h2>
+        <p class="subtle">Daily body weight is useful data; a single daily change is not a verdict.</p>
+
+        <div class="grid two" style="margin-top:24px">
+          <div class="card">
+            <h3>Measurements</h3>
+            <ul class="clean">
+              <li>Weigh daily after waking, bathroom, and before food or fluid.</li>
+              <li>Compare rolling averages, not isolated readings.</li>
+              <li>Measure waist on preparation days 1, 8, 15 and 21.</li>
+              <li>Measure at the navel, relaxed after a normal exhale.</li>
+              <li>Take three readings and record the middle one.</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>Progress photos</h3>
+            <ul class="clean">
+              <li>Take photos on days 1, 8, 15 and shoot morning.</li>
+              <li>Keep room, lighting, distance, lens and time consistent.</li>
+              <li>Use front, side and back views.</li>
+              <li>Capture one relaxed and one lightly flexed set.</li>
+              <li>Do not use a workout pump for tracking photos.</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="section-head"><h2>Adjustment rules</h2></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>If this happens</th><th>Do this</th></tr></thead>
+            <tbody>
+              <tr><td>After day 7, weight trend and waist are both unchanged</td><td>Audit portions, oil, tea sugar and steps. If adherence is at least 90%, add 2,000 steps <b>or</b> remove 100–150 kcal—not both.</td></tr>
+              <tr><td>Loss is 0.6–1.0 kg/week after the initial water shift</td><td>Make no change.</td></tr>
+              <tr><td>Loss exceeds 1.3 kg/week after week one and performance falls</td><td>Add 150–200 kcal, mainly 30–40 g carbohydrate around training.</td></tr>
+              <tr><td>Excessive hunger</td><td>Move food later, add 200–300 g low-calorie vegetables and water. If persistent for three days, add 100–150 kcal.</td></tr>
+              <tr><td>Two workouts show more than 10% performance loss</td><td>Remove one cardio session, add 25–40 g pre-workout carbohydrate, and check sleep.</td></tr>
+              <tr><td>Weakness, dizziness or unusual fatigue</td><td>Stop training, eat and hydrate. Persistent or severe symptoms require medical care.</td></tr>
+              <tr><td>Weight drops but waist does not for one week</td><td>Do nothing yet. Recheck measuring technique and wait another week.</td></tr>
+              <tr><td>Bloating increases</td><td>Check constipation, abrupt fibre changes, onion, large dairy loads, fizzy drinks, sugar alcohols, restaurant salt and eating speed—one variable at a time.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="section-head no-print"><h2>Your saved data</h2></div>
+        <div class="card no-print">
+          <p class="subtle">Export a backup before clearing browser data or moving this file to another computer.</p>
+          <div style="display:flex;flex-wrap:wrap;gap:10px">
+            <button class="btn primary" id="export-data">Export check-ins</button>
+            <button class="btn" onclick="window.print()">Print plan</button>
+            <button class="btn danger" id="reset-data">Reset all check-ins</button>
+          </div>
+        </div>
+
+        <div class="callout" style="margin-top:18px">
+          <strong>Health note</strong>
+          A 41-inch waist increases long-term metabolic risk. Seek clinician input before
+          an aggressive deficit if you have kidney disease, diabetes, uncontrolled blood
+          pressure, relevant medication use, or concerning symptoms.
+        </div>
+      </section>
+
+      <footer class="footer">
+        <p>
+          Evidence anchors:
+          <a href="https://www.cdc.gov/healthy-weight-growth/losing-weight/index.html" target="_blank" rel="noreferrer">CDC weight-loss guidance</a>,
+          <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC5477153/" target="_blank" rel="noreferrer">ISSN protein position stand</a>,
+          and <a href="https://acsm.org/resistance-training-guidelines-update-2026/" target="_blank" rel="noreferrer">ACSM 2026 resistance-training guidance</a>.
+          This plan is educational and is not a medical diagnosis or treatment.
+        </p>
+      </footer>
+    </main>
+  </div>
+
+  <nav class="mobile-nav" aria-label="Mobile plan sections">
+    <button class="active" data-view="dashboard">Today</button>
+    <button data-view="nutrition">Food</button>
+    <button data-view="training">Training</button>
+    <button data-view="final-week">Final week</button>
+    <button data-view="tracking">Tracking</button>
+  </nav>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    (() => {
+      const STORAGE_KEY = "physiquePlan21.v1";
+      const dayMs = 86400000;
+      const pad = n => String(n).padStart(2, "0");
+      const toKey = date => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+      const fromKey = key => {
+        const [year, month, day] = key.split("-").map(Number);
+        return new Date(year, month - 1, day);
+      };
+      const addDays = (date, amount) => {
+        const result = new Date(date);
+        result.setDate(result.getDate() + amount);
+        result.setHours(12, 0, 0, 0);
+        return result;
+      };
+      const today = () => {
+        const date = new Date();
+        date.setHours(12, 0, 0, 0);
+        return date;
+      };
+      const formatDate = (date, options = {}) => date.toLocaleDateString(undefined, {
+        weekday: "short", month: "short", day: "numeric", ...options
+      });
+      const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
+      })[char]);
+
+      const sessions = [
+        { name: "Pull / width", detail: "Pulldown, supported row, cable lat pull-in, rear delts and curls. Finish with 25 minutes incline walking." },
+        { name: "Push / upper chest", detail: "Incline press, machine press, low-to-high fly, lateral raises and triceps. Add 20–25 minutes incline walking." },
+        { name: "Legs + core", detail: "Compact leg and core session. Keep 1–3 reps in reserve and finish with only 10–15 minutes easy walking." },
+        { name: "Recovery", detail: "No weights. Complete a 35–45 minute brisk walk, mobility and 10,000 total steps." },
+        { name: "Upper V-taper", detail: "Pulldown, incline press, row, shoulder press, lateral and rear-delt work. Add 20–25 minutes incline walking." },
+        { name: "Delts + arms", detail: "Lateral delts, rear delts, pullover, fly, curls and pressdowns. Finish with 20 minutes easy incline walking." },
+        { name: "Rest", detail: "No formal training. Keep 10,000 relaxed steps, normal food, water and sleep." }
+      ];
+      const finalSessions = [
+        { name: "Pull, moderate", detail: "Normal pull session with reduced effort. No failure; 20 minutes easy incline walking." },
+        { name: "Push, moderate", detail: "Keep the upper-chest and shoulder stimulus. No failure; short easy cardio." },
+        { name: "Light legs + core", detail: "Last leg session. Use fewer sets, avoid soreness and skip hard conditioning." },
+        { name: "Upper, moderate", detail: "Controlled upper-body work. Finish every set fresh enough to recover quickly." },
+        { name: "Rest / easy steps", detail: "No weights or hard cardio. Use familiar foods and keep water and sodium normal." },
+        { name: "Light upper pump", detail: "30–40 minutes, two sets per upper-body muscle, 12–15 reps, far from failure." },
+        { name: "Rest / low residue", detail: "Easy steps only. Familiar lower-residue meals, normal water and salt, and early bed." }
+      ];
+      const shootSession = {
+        name: "Shoot day",
+        detail: "Eat familiar low-fibre food, sip water normally, and perform the 10–15 minute upper-body pump shortly before photos."
+      };
+      const standardTasks = [
+        ["calories", "Stay near 2,000 kcal", "1,900–2,100"],
+        ["protein", "Reach at least 180 g protein", "Target 190 g"],
+        ["steps", "Complete daily steps", "10,000"],
+        ["water", "Drink normal daily fluids", "3.0–3.5 L"],
+        ["training", "Complete today’s training", "As scheduled"],
+        ["sleep", "Protect tonight’s sleep", "8 hours"],
+        ["checkin", "Record weight, energy and notes", "2 minutes"]
+      ];
+      const shootTasks = [
+        ["breakfast", "Eat protein + low-fibre carbohydrate", "3–4 h before"],
+        ["water", "Sip water normally", "No restriction"],
+        ["snack", "Optional easy carbohydrate", "60–90 min before"],
+        ["pump", "Complete upper-body pump", "10–15 min"],
+        ["posture", "Stand tall and breathe normally", "During photos"],
+        ["avoid", "Avoid unfamiliar food and heavy fibre", "All morning"],
+        ["enjoy", "Stay relaxed and enjoy the shoot", "Priority"]
+      ];
+
+      const defaultShoot = addDays(today(), 21);
+      let state;
+      try {
+        state = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+      } catch {
+        state = {};
+      }
+      state.shootDate ||= toKey(defaultShoot);
+      state.days ||= {};
+      let selectedKey = state.selectedDate || toKey(today());
+
+      const save = () => {
+        state.selectedDate = selectedKey;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      };
+      const shootDate = () => fromKey(state.shootDate);
+      const startDate = () => addDays(shootDate(), -21);
+      const dayIndexFor = date => Math.round((date - startDate()) / dayMs) + 1;
+      const sessionFor = index => {
+        if (index === 22) return shootSession;
+        if (index >= 15) return finalSessions[index - 15];
+        return sessions[(index - 1) % 7];
+      };
+      const selectedEntry = () => state.days[selectedKey] ||= { checks: {} };
+      const tasksFor = index => index === 22 ? shootTasks : standardTasks;
+      const isInPlan = index => index >= 1 && index <= 22;
+
+      function navigate(viewId) {
+        document.querySelectorAll(".view").forEach(view => view.classList.toggle("active", view.id === viewId));
+        document.querySelectorAll("[data-view]").forEach(button => button.classList.toggle("active", button.dataset.view === viewId));
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+      document.querySelectorAll("[data-view]").forEach(button => button.addEventListener("click", () => navigate(button.dataset.view)));
+
+      function renderCalendar() {
+        const calendar = document.getElementById("calendar");
+        const currentKey = toKey(today());
+        calendar.innerHTML = "";
+        for (let offset = 0; offset <= 21; offset++) {
+          const date = addDays(startDate(), offset);
+          const key = toKey(date);
+          const index = offset + 1;
+          const entry = state.days[key];
+          const taskCount = tasksFor(index).length;
+          const done = entry ? Object.values(entry.checks || {}).filter(Boolean).length : 0;
+          const button = document.createElement("button");
+          button.className = [
+            "day",
+            key === selectedKey ? "selected" : "",
+            key === currentKey ? "today" : "",
+            date < today() ? "past" : "",
+            index === 22 ? "shoot" : ""
+          ].filter(Boolean).join(" ");
+          button.innerHTML = `
+            <span class="day-top"><span>${index === 22 ? "Shoot" : `Day ${index}`}</span><span>${done ? `${done}/${taskCount}` : ""}</span></span>
+            <span class="day-date">${escapeHtml(formatDate(date, { weekday: undefined }))}</span>
+            <span class="day-session">${escapeHtml(sessionFor(index).name)}</span>
+            ${done === taskCount ? '<span class="day-done">Complete</span>' : ""}
+          `;
+          button.addEventListener("click", () => {
+            selectedKey = key;
+            save();
+            render();
+            window.scrollTo({ top: document.querySelector(".section-head").offsetTop - 16, behavior: "smooth" });
+          });
+          calendar.appendChild(button);
+        }
+      }
+
+      function renderSelectedDay() {
+        const date = fromKey(selectedKey);
+        const index = dayIndexFor(date);
+        const entry = selectedEntry();
+        const session = isInPlan(index) ? sessionFor(index) : { name: "Outside plan", detail: "Choose a date inside the preparation calendar." };
+        const tasks = isInPlan(index) ? tasksFor(index) : standardTasks;
+
+        document.getElementById("selected-title").textContent =
+          index === 22 ? `Shoot day · ${formatDate(date)}` :
+          isInPlan(index) ? `Day ${index} · ${formatDate(date)}` :
+          formatDate(date);
+        document.getElementById("session-pill").textContent =
+          index === 22 ? "Shoot day" : isInPlan(index) ? `Day ${index} · T−${22 - index}` : "Outside plan";
+        document.getElementById("session-name").textContent = session.name;
+        document.getElementById("session-detail").textContent = session.detail;
+
+        const checklist = document.getElementById("checklist");
+        checklist.innerHTML = "";
+        tasks.forEach(([id, name, target]) => {
+          const label = document.createElement("label");
+          label.className = "check";
+          label.innerHTML = `
+            <input type="checkbox" ${entry.checks?.[id] ? "checked" : ""}>
+            <span class="check-name">${escapeHtml(name)}</span>
+            <small>${escapeHtml(target)}</small>
+          `;
+          label.querySelector("input").addEventListener("change", event => {
+            entry.checks ||= {};
+            entry.checks[id] = event.target.checked;
+            save();
+            updateProgress(tasks, entry);
+            renderCalendar();
+          });
+          checklist.appendChild(label);
+        });
+
+        document.getElementById("weight-input").value = entry.weight || "";
+        document.getElementById("waist-input").value = entry.waist || "";
+        document.getElementById("energy-input").value = entry.energy || "";
+        document.getElementById("notes-input").value = entry.notes || "";
+        updateProgress(tasks, entry);
+      }
+
+      function updateProgress(tasks, entry) {
+        const done = tasks.filter(([id]) => entry.checks?.[id]).length;
+        const percent = Math.round(done / tasks.length * 100);
+        document.getElementById("completion-label").textContent = `${done} / ${tasks.length}`;
+        document.getElementById("progress-fill").style.width = `${percent}%`;
+        document.getElementById("day-guidance").textContent =
+          percent === 100 ? "Day complete. Recover and repeat tomorrow." :
+          percent >= 70 ? "Strong day. Finish the highest-value remaining action." :
+          "Consistency beats a perfect single day.";
+      }
+
+      function renderCountdown() {
+        const remaining = Math.ceil((shootDate() - today()) / dayMs);
+        const chip = document.getElementById("countdown-chip");
+        chip.textContent =
+          remaining > 1 ? `${remaining} days until the shoot` :
+          remaining === 1 ? "Shoot is tomorrow" :
+          remaining === 0 ? "Shoot day" :
+          `${Math.abs(remaining)} days since the shoot`;
+      }
+
+      function render() {
+        document.getElementById("shoot-date").value = state.shootDate;
+        renderCountdown();
+        renderSelectedDay();
+        renderCalendar();
+      }
+
+      ["weight", "waist", "energy", "notes"].forEach(field => {
+        document.getElementById(`${field}-input`).addEventListener("input", event => {
+          selectedEntry()[field] = event.target.value;
+          save();
+        });
+      });
+
+      document.getElementById("shoot-date").addEventListener("change", event => {
+        if (!event.target.value) return;
+        state.shootDate = event.target.value;
+        const current = today();
+        const currentIndex = dayIndexFor(current);
+        selectedKey = isInPlan(currentIndex) ? toKey(current) : toKey(startDate());
+        save();
+        render();
+        toast("Shoot date and calendar updated");
+      });
+      document.getElementById("jump-today").addEventListener("click", () => {
+        selectedKey = toKey(today());
+        save();
+        render();
+      });
+      document.getElementById("export-data").addEventListener("click", () => {
+        const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `physique-plan-checkins-${toKey(today())}.json`;
+        link.click();
+        URL.revokeObjectURL(url);
+        toast("Check-ins exported");
+      });
+      document.getElementById("reset-data").addEventListener("click", () => {
+        if (!confirm("Delete all saved check-ins and restore the default shoot date?")) return;
+        localStorage.removeItem(STORAGE_KEY);
+        state = { shootDate: toKey(defaultShoot), days: {} };
+        selectedKey = toKey(today());
+        save();
+        render();
+        toast("All check-ins reset");
+      });
+
+      let toastTimer;
+      function toast(message) {
+        const element = document.getElementById("toast");
+        element.textContent = message;
+        element.classList.add("show");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => element.classList.remove("show"), 2200);
+      }
+
+      render();
+    })();
+  </script>
+</body>
+</html>
